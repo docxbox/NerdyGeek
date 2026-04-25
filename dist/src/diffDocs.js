@@ -63,6 +63,68 @@ export function chooseBestDiffDocument(documents, stack, fromVersion, toVersion)
     }))
         .sort((a, b) => b.score - a.score || a.document.url.localeCompare(b.document.url))[0]?.document;
 }
+function headingType(heading) {
+    const lower = heading.toLowerCase();
+    if (/(removed|removal)/.test(lower))
+        return "removed";
+    if (/(deprecat|sunsetting)/.test(lower))
+        return "deprecated";
+    if (/(breaking|behavior|behaviour|changed|changes)/.test(lower))
+        return "breaking";
+    if (/(new|added|introduced|feature)/.test(lower))
+        return "new";
+    return null;
+}
+function toEntryDescription(heading, text) {
+    const normalizedHeading = normalizeText(heading);
+    const normalizedText = normalizeText(text);
+    if (!normalizedHeading) {
+        return normalizedText;
+    }
+    if (normalizedText.toLowerCase().startsWith(normalizedHeading.toLowerCase())) {
+        return normalizedText;
+    }
+    return `${normalizedHeading}: ${normalizedText}`;
+}
+export function extractStructuredDiffEntries(html) {
+    const $ = cheerio.load(html);
+    const root = $("main, article, [role='main']").first().length
+        ? $("main, article, [role='main']").first()
+        : $("body");
+    const entries = [];
+    root.find("h2, h3, h4").each((_, element) => {
+        const heading = normalizeText($(element).text());
+        const inheritedType = headingType(heading);
+        if (!heading || /upgrade guide$/i.test(heading)) {
+            return;
+        }
+        const siblingTexts = $(element)
+            .nextUntil("h2, h3, h4")
+            .toArray()
+            .flatMap((node) => {
+            const current = $(node);
+            if (current.is("ul, ol")) {
+                return current
+                    .find("li")
+                    .toArray()
+                    .map((li) => normalizeText($(li).text()));
+            }
+            return [normalizeText(current.text())];
+        })
+            .filter((text) => text.length >= 20);
+        for (const text of siblingTexts) {
+            const type = inheritedType ?? classifyChunk(text);
+            if (!type) {
+                continue;
+            }
+            const description = toEntryDescription(heading, text);
+            if (!entries.some((entry) => entry.type === type && entry.description === description)) {
+                entries.push({ type, description });
+            }
+        }
+    });
+    return entries;
+}
 function extractVersionSection(html, fromVersion, toVersion) {
     const $ = cheerio.load(html);
     const text = normalizeText($("main, article, body").first().text());
@@ -94,8 +156,10 @@ export async function diff_docs(input) {
     }
     const docs = await retrieveDocs([changelogUrl], query);
     const bestDocument = chooseBestDiffDocument(docs, stack, fromVersion, toVersion);
+    let structuredEntries = [];
     if (bestDocument) {
         bestSourceUrl = bestDocument.url;
+        structuredEntries = extractStructuredDiffEntries(bestDocument.html);
         try {
             const focusedSection = extractVersionSection(bestDocument.html, fromVersion, toVersion);
             if (focusedSection.length > sectionText.length || /(upgrade|migration|breaking|deprecated|removed)/i.test(focusedSection)) {
@@ -106,24 +170,30 @@ export async function diff_docs(input) {
             // Keep current section text
         }
     }
-    if (!sectionText) {
+    if (!sectionText && structuredEntries.length === 0) {
         const chunks = rankChunks(docs, query);
         sectionText = chunks
             .slice(0, 8)
             .map((c) => c.text)
             .join(" ");
     }
-    const sentences = sectionText
-        .split(/(?<=[.!?])\s+|\n+/)
-        .map(normalizeText)
-        .filter((s) => s.length > 20);
     const changes = [];
-    for (const sentence of sentences.slice(0, 40)) {
-        const type = classifyChunk(sentence);
-        if (type) {
-            // Avoid duplicates
-            if (!changes.some((c) => c.description === sentence)) {
-                changes.push({ type, description: sentence });
+    for (const entry of structuredEntries.slice(0, 24)) {
+        if (!changes.some((existing) => existing.type === entry.type && existing.description === entry.description)) {
+            changes.push(entry);
+        }
+    }
+    if (changes.length === 0 && sectionText) {
+        const sentences = sectionText
+            .split(/(?<=[.!?])\s+|\n+/)
+            .map(normalizeText)
+            .filter((s) => s.length > 20);
+        for (const sentence of sentences.slice(0, 40)) {
+            const type = classifyChunk(sentence);
+            if (type) {
+                if (!changes.some((c) => c.description === sentence)) {
+                    changes.push({ type, description: sentence });
+                }
             }
         }
     }

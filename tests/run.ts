@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { SemanticCache } from "../src/cache.js";
 import { detectStack } from "../src/detector.js";
 import { directProbeUrlsForTesting, discoverChangelogUrl, discoverDeprecationUrl, searchQueriesForTesting } from "../src/discovery.js";
-import { chooseBestDiffDocument, classifyChunk } from "../src/diffDocs.js";
+import { chooseBestDiffDocument, classifyChunk, extractStructuredDiffEntries } from "../src/diffDocs.js";
 import { extract, extractRelevantCodeBlocks } from "../src/extractor.js";
 import { rankChunks } from "../src/ranker.js";
 import { extractApiCalls, matchDeprecation } from "../src/scanDeprecations.js";
@@ -233,6 +233,30 @@ export async function create() {
     "19"
   );
   assert.equal(bestDiffDocument?.url, "https://react.dev/blog/2024/04/25/react-19-upgrade-guide");
+
+  const structuredEntries = extractStructuredDiffEntries(`
+    <html><body><main>
+      <h1>React 19 Upgrade Guide</h1>
+      <h2>New Features</h2>
+      <ul>
+        <li>ref as a prop is now supported.</li>
+      </ul>
+      <h2>Deprecated APIs</h2>
+      <ul>
+        <li>react-test-renderer is deprecated.</li>
+      </ul>
+      <h2>Removed APIs</h2>
+      <ul>
+        <li>ReactDOM.render has been removed.</li>
+      </ul>
+      <h2>Breaking Changes</h2>
+      <p>Errors are no longer re-thrown after they are caught.</p>
+    </main></body></html>
+  `);
+  assert.ok(structuredEntries.some((entry) => entry.type === "new" && entry.description.includes("ref as a prop")));
+  assert.ok(structuredEntries.some((entry) => entry.type === "deprecated" && entry.description.includes("react-test-renderer")));
+  assert.ok(structuredEntries.some((entry) => entry.type === "removed" && entry.description.includes("ReactDOM.render")));
+  assert.ok(structuredEntries.some((entry) => entry.type === "breaking" && entry.description.includes("no longer re-thrown")));
 
   // --- extractApiCalls ---
   const sampleCode = `
