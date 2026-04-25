@@ -30,6 +30,7 @@ function scoreCandidateLink(query: string, href: string, anchorText: string): nu
   const normalized = `${href} ${anchorText}`.toLowerCase();
   const keywords = [...new Set((query.toLowerCase().match(/[a-z0-9_]+/g) ?? []).filter((part) => part.length >= 3))];
   const overlap = keywords.reduce((count, keyword) => count + (normalized.includes(keyword) ? 1 : 0), 0);
+  const isDiffLikeQuery = /(diff|upgrade|migration|changelog|breaking|deprecated|removed)/.test(query.toLowerCase());
   let score = overlap * 2;
 
   if (/(docs|guide|reference|api|learn)/.test(normalized)) {
@@ -44,7 +45,9 @@ function scoreCandidateLink(query: string, href: string, anchorText: string): nu
     score += 4;
   }
 
-  if (/(blog|changelog|release)/.test(normalized)) {
+  if (isDiffLikeQuery && /(upgrade|migration|changelog|release|blog)/.test(normalized)) {
+    score += 6;
+  } else if (/(blog|changelog|release)/.test(normalized)) {
     score -= 3;
   }
 

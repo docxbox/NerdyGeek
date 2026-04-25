@@ -24,6 +24,45 @@ export function classifyChunk(text) {
         return "new";
     return null;
 }
+function scoreDiffDocument(document, stack, fromVersion, toVersion) {
+    const url = document.url.toLowerCase();
+    const text = normalizeText(document.html.replace(/<[^>]+>/g, " ")).toLowerCase().slice(0, 12000);
+    const combined = `${url} ${text}`;
+    let score = 0;
+    if (/(upgrade|migration)/.test(url)) {
+        score += 12;
+    }
+    if (/(changelog|release|releases|blog)/.test(url)) {
+        score += 4;
+    }
+    if (combined.includes(`${stack.toLowerCase()} ${toVersion.toLowerCase()}`)) {
+        score += 10;
+    }
+    if (combined.includes(`${stack.toLowerCase()} ${fromVersion.toLowerCase()}`)) {
+        score += 4;
+    }
+    if (combined.includes(`v${toVersion.toLowerCase()}`) || combined.includes(`version ${toVersion.toLowerCase()}`)) {
+        score += 8;
+    }
+    if (combined.includes(`v${fromVersion.toLowerCase()}`) || combined.includes(`version ${fromVersion.toLowerCase()}`)) {
+        score += 3;
+    }
+    if (/(breaking|deprecated|removed|upgrade guide|migration guide)/.test(combined)) {
+        score += 6;
+    }
+    if (/read more|you can also follow|posted here first/.test(combined)) {
+        score -= 8;
+    }
+    return score;
+}
+export function chooseBestDiffDocument(documents, stack, fromVersion, toVersion) {
+    return documents
+        .map((document) => ({
+        document,
+        score: scoreDiffDocument(document, stack, fromVersion, toVersion)
+    }))
+        .sort((a, b) => b.score - a.score || a.document.url.localeCompare(b.document.url))[0]?.document;
+}
 function extractVersionSection(html, fromVersion, toVersion) {
     const $ = cheerio.load(html);
     const text = normalizeText($("main, article, body").first().text());
@@ -40,6 +79,8 @@ async function fetchChangelogUrl(stack) {
 export async function diff_docs(input) {
     const { stack, fromVersion, toVersion } = input;
     const changelogUrl = await fetchChangelogUrl(stack);
+    const query = `${stack} ${fromVersion} to ${toVersion} upgrade guide migration breaking changes deprecated removed`;
+    let bestSourceUrl = changelogUrl;
     let sectionText = "";
     try {
         const response = await fetchWithTimeout(changelogUrl);
@@ -51,9 +92,21 @@ export async function diff_docs(input) {
     catch {
         // Fall through to ranked-chunk approach
     }
+    const docs = await retrieveDocs([changelogUrl], query);
+    const bestDocument = chooseBestDiffDocument(docs, stack, fromVersion, toVersion);
+    if (bestDocument) {
+        bestSourceUrl = bestDocument.url;
+        try {
+            const focusedSection = extractVersionSection(bestDocument.html, fromVersion, toVersion);
+            if (focusedSection.length > sectionText.length || /(upgrade|migration|breaking|deprecated|removed)/i.test(focusedSection)) {
+                sectionText = focusedSection;
+            }
+        }
+        catch {
+            // Keep current section text
+        }
+    }
     if (!sectionText) {
-        const query = `${stack} ${fromVersion} to ${toVersion} migration breaking changes`;
-        const docs = await retrieveDocs([changelogUrl], query);
         const chunks = rankChunks(docs, query);
         sectionText = chunks
             .slice(0, 8)
@@ -78,7 +131,7 @@ export async function diff_docs(input) {
     if (changes.length === 0 && sectionText.length > 0) {
         changes.push({
             type: "breaking",
-            description: `See official migration guide: ${changelogUrl}`
+            description: `See official migration guide: ${bestSourceUrl}`
         });
     }
     return {
@@ -86,6 +139,6 @@ export async function diff_docs(input) {
         fromVersion,
         toVersion,
         changes,
-        sources: unique([changelogUrl])
+        sources: unique([bestSourceUrl, changelogUrl])
     };
 }

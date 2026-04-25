@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { SemanticCache } from "../src/cache.js";
 import { detectStack } from "../src/detector.js";
 import { directProbeUrlsForTesting, discoverChangelogUrl, discoverDeprecationUrl, searchQueriesForTesting } from "../src/discovery.js";
-import { classifyChunk } from "../src/diffDocs.js";
+import { chooseBestDiffDocument, classifyChunk } from "../src/diffDocs.js";
 import { extract, extractRelevantCodeBlocks } from "../src/extractor.js";
 import { rankChunks } from "../src/ranker.js";
 import { extractApiCalls, matchDeprecation } from "../src/scanDeprecations.js";
@@ -157,6 +157,30 @@ export async function create() {
     assert.equal(classifyChunk("This is a breaking change introduced in 2.0."), "breaking");
     assert.equal(classifyChunk("Added support for concurrent rendering."), "new");
     assert.equal(classifyChunk("This is an unrelated sentence about the weather."), null);
+    const bestDiffDocument = chooseBestDiffDocument([
+        {
+            url: "https://react.dev/blog",
+            sourceType: "official",
+            html: `
+          <html><body><main>
+            <p>Read more about React 19 and other updates on the React blog.</p>
+            <p>Anything important will be posted here first.</p>
+          </main></body></html>
+        `
+        },
+        {
+            url: "https://react.dev/blog/2024/04/25/react-19-upgrade-guide",
+            sourceType: "official",
+            html: `
+          <html><body><main>
+            <h1>React 19 Upgrade Guide</h1>
+            <p>The improvements added to React 19 require some breaking changes.</p>
+            <p>This migration guide explains deprecated and removed APIs when upgrading from React 18 to React 19.</p>
+          </main></body></html>
+        `
+        }
+    ], "react", "18", "19");
+    assert.equal(bestDiffDocument?.url, "https://react.dev/blog/2024/04/25/react-19-upgrade-guide");
     // --- extractApiCalls ---
     const sampleCode = `
 import { useState, useEffect } from 'react';
