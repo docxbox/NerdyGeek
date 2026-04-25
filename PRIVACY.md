@@ -46,4 +46,5 @@ deploys the service.
 
 For questions about this project, contact:
 
-- `likhildahal5@gmail.com`
+
+- `likhildahal@outlook.com`
