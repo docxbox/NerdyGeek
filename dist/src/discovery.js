@@ -4,6 +4,8 @@ import { normalizeText, safeHostname, sanitizeFrameworkName, unique } from "./ut
 const discouragedHostsPattern = /(medium\.com|dev\.to|stackoverflow\.com|reddit\.com|wikipedia\.org)/i;
 const discouragedMirrorPattern = /\b(mirror|mirrors|translated|translation|community|community-maintained|unofficial|archive|fork)\b/i;
 const likelyOfficialTldPattern = /\.(org|dev|io|com|app|net|build|js|rs|sh)$/i;
+const directProbeTlds = ["dev", "org", "io", "com", "app", "net", "build", "js", "rs", "sh"];
+const directProbePaths = ["/docs", "/doc", "/reference", "/learn", "/"];
 function frameworkVariants(frameworkName) {
     const sanitized = sanitizeFrameworkName(frameworkName).replace(/\s+/g, " ").trim();
     const compact = sanitized.replace(/\s+/g, "");
@@ -28,6 +30,32 @@ function searchQueries(frameworkName) {
         `${alias} API reference`,
         `${alias} official docs`
     ]));
+}
+function hostLabels(frameworkName) {
+    const labels = new Set();
+    for (const variant of frameworkVariants(frameworkName)) {
+        const compact = variant.replace(/[^a-z0-9]/g, "");
+        const dashed = variant.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        if (compact.length >= 2) {
+            labels.add(compact);
+        }
+        if (dashed.length >= 2) {
+            labels.add(dashed);
+        }
+    }
+    return [...labels].sort((a, b) => a.length - b.length || a.localeCompare(b)).slice(0, 6);
+}
+function directProbeUrls(frameworkName) {
+    const urls = [];
+    for (const label of hostLabels(frameworkName)) {
+        for (const tld of directProbeTlds) {
+            const base = `https://${label}.${tld}`;
+            for (const path of directProbePaths) {
+                urls.push(`${base}${path}`);
+            }
+        }
+    }
+    return unique(urls);
 }
 function normalizeSearchUrl(rawUrl) {
     try {
@@ -149,6 +177,29 @@ async function scoreResolvedPage(frameworkName, candidate) {
     }
     return score;
 }
+async function scoreDirectProbe(frameworkName, url) {
+    const hostname = safeHostname(url);
+    const path = new URL(url).pathname.toLowerCase();
+    const candidate = {
+        url,
+        title: "",
+        snippet: "",
+        hostname,
+        score: 0,
+        hits: 0
+    };
+    let score = await scoreResolvedPage(frameworkName, candidate);
+    if (path === "/docs" || path === "/doc" || path === "/reference") {
+        score += 5;
+    }
+    else if (path === "/learn") {
+        score += 3;
+    }
+    else if (path === "/") {
+        score += 1;
+    }
+    return score;
+}
 async function searchDuckDuckGo(query) {
     const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
     const response = await fetchWithTimeout(url);
@@ -215,10 +266,23 @@ export async function discoverFrameworkDocs(frameworkName) {
         b.candidate.hits - a.candidate.hits ||
         a.candidate.url.localeCompare(b.candidate.url))[0];
     if (!best) {
-        throw new Error(`Unable to discover official docs for "${frameworkName}"`);
+        const directCandidates = await Promise.all(directProbeUrls(frameworkName).map(async (url) => ({
+            url,
+            score: await scoreDirectProbe(frameworkName, url)
+        })));
+        const directBest = directCandidates
+            .filter((candidate) => candidate.score > 0)
+            .sort((a, b) => b.score - a.score || a.url.localeCompare(b.url))[0];
+        if (!directBest) {
+            throw new Error(`Unable to discover official docs for "${frameworkName}"`);
+        }
+        return directBest.url;
     }
     return best.candidate.url;
 }
 export function searchQueriesForTesting(frameworkName) {
     return unique(searchQueries(frameworkName));
+}
+export function directProbeUrlsForTesting(frameworkName) {
+    return directProbeUrls(frameworkName);
 }

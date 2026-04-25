@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { SemanticCache } from "../src/cache.js";
 import { detectStack } from "../src/detector.js";
-import { searchQueriesForTesting } from "../src/discovery.js";
+import { directProbeUrlsForTesting, searchQueriesForTesting } from "../src/discovery.js";
 import { extract, extractRelevantCodeBlocks } from "../src/extractor.js";
 import { rankChunks } from "../src/ranker.js";
 import { validate } from "../src/validation.js";
@@ -21,6 +21,9 @@ async function main() {
     const goQueries = searchQueriesForTesting("go");
     assert.ok(goQueries.includes("go programming language official documentation"));
     assert.ok(goQueries.includes("go programming language docs"));
+    const goProbeUrls = directProbeUrlsForTesting("go");
+    assert.ok(goProbeUrls.includes("https://go.dev/doc"));
+    assert.ok(goProbeUrls.includes("https://go.dev/"));
     const nextQueries = searchQueriesForTesting("nextjs");
     assert.ok(nextQueries.includes("next.js official documentation"));
     assert.ok(nextQueries.includes("next docs"));

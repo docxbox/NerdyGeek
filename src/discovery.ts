@@ -7,6 +7,8 @@ const discouragedHostsPattern = /(medium\.com|dev\.to|stackoverflow\.com|reddit\
 const discouragedMirrorPattern =
   /\b(mirror|mirrors|translated|translation|community|community-maintained|unofficial|archive|fork)\b/i;
 const likelyOfficialTldPattern = /\.(org|dev|io|com|app|net|build|js|rs|sh)$/i;
+const directProbeTlds = ["dev", "org", "io", "com", "app", "net", "build", "js", "rs", "sh"];
+const directProbePaths = ["/docs", "/doc", "/reference", "/learn", "/"];
 
 function frameworkVariants(frameworkName: string): string[] {
   const sanitized = sanitizeFrameworkName(frameworkName).replace(/\s+/g, " ").trim();
@@ -39,6 +41,40 @@ function searchQueries(frameworkName: string): string[] {
       `${alias} official docs`
     ])
   );
+}
+
+function hostLabels(frameworkName: string): string[] {
+  const labels = new Set<string>();
+
+  for (const variant of frameworkVariants(frameworkName)) {
+    const compact = variant.replace(/[^a-z0-9]/g, "");
+    const dashed = variant.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+    if (compact.length >= 2) {
+      labels.add(compact);
+    }
+
+    if (dashed.length >= 2) {
+      labels.add(dashed);
+    }
+  }
+
+  return [...labels].sort((a, b) => a.length - b.length || a.localeCompare(b)).slice(0, 6);
+}
+
+function directProbeUrls(frameworkName: string): string[] {
+  const urls: string[] = [];
+
+  for (const label of hostLabels(frameworkName)) {
+    for (const tld of directProbeTlds) {
+      const base = `https://${label}.${tld}`;
+      for (const path of directProbePaths) {
+        urls.push(`${base}${path}`);
+      }
+    }
+  }
+
+  return unique(urls);
 }
 
 type DomainCandidate = {
@@ -199,6 +235,31 @@ async function scoreResolvedPage(frameworkName: string, candidate: DomainCandida
   return score;
 }
 
+async function scoreDirectProbe(frameworkName: string, url: string): Promise<number> {
+  const hostname = safeHostname(url);
+  const path = new URL(url).pathname.toLowerCase();
+  const candidate: DomainCandidate = {
+    url,
+    title: "",
+    snippet: "",
+    hostname,
+    score: 0,
+    hits: 0
+  };
+
+  let score = await scoreResolvedPage(frameworkName, candidate);
+
+  if (path === "/docs" || path === "/doc" || path === "/reference") {
+    score += 5;
+  } else if (path === "/learn") {
+    score += 3;
+  } else if (path === "/") {
+    score += 1;
+  }
+
+  return score;
+}
+
 async function searchDuckDuckGo(query: string): Promise<SearchResult[]> {
   const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
   const response = await fetchWithTimeout(url);
@@ -282,7 +343,22 @@ export async function discoverFrameworkDocs(frameworkName: string): Promise<stri
     )[0];
 
   if (!best) {
-    throw new Error(`Unable to discover official docs for "${frameworkName}"`);
+    const directCandidates = await Promise.all(
+      directProbeUrls(frameworkName).map(async (url) => ({
+        url,
+        score: await scoreDirectProbe(frameworkName, url)
+      }))
+    );
+
+    const directBest = directCandidates
+      .filter((candidate) => candidate.score > 0)
+      .sort((a, b) => b.score - a.score || a.url.localeCompare(b.url))[0];
+
+    if (!directBest) {
+      throw new Error(`Unable to discover official docs for "${frameworkName}"`);
+    }
+
+    return directBest.url;
   }
 
   return best.candidate.url;
@@ -290,4 +366,8 @@ export async function discoverFrameworkDocs(frameworkName: string): Promise<stri
 
 export function searchQueriesForTesting(frameworkName: string): string[] {
   return unique(searchQueries(frameworkName));
+}
+
+export function directProbeUrlsForTesting(frameworkName: string): string[] {
+  return directProbeUrls(frameworkName);
 }
