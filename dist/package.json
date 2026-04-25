@@ -1,0 +1,36 @@
+{
+    "name": "nerdygeek",
+    "version": "1.0.2",
+    "description": "NerdyGeek Docs Intelligence MCP Bundle",
+    "private": true,
+    "type": "module",
+    "engines": {
+        "node": ">=20.11.0"
+    },
+    "scripts": {
+        "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && node scripts/sync-claude-plugin-version.mjs",
+        "dev": "tsx watch src/stdio.ts",
+        "dev:http": "tsx watch src/httpServer.ts",
+        "start": "node dist/src/stdio.js",
+        "start:http": "node dist/src/httpServer.js",
+        "bundle": "npm run build && powershell -ExecutionPolicy Bypass -File scripts/pack-bundle.ps1",
+        "install:claude-code": "node scripts/install-local.mjs claude-code",
+        "install:codex": "node scripts/install-local.mjs codex",
+        "install:all": "node scripts/install-local.mjs all",
+        "sync:claude-plugin": "node scripts/sync-claude-plugin-version.mjs",
+        "test": "node dist/tests/run.js",
+        "prepack": "npm run build"
+    },
+    "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.29.0",
+        "cheerio": "^1.1.0",
+        "express": "^5.1.0",
+        "zod": "^4.1.5"
+    },
+    "devDependencies": {
+        "@types/express": "^5.0.3",
+        "@types/node": "^24.3.0",
+        "tsx": "^4.20.5",
+        "typescript": "^5.9.2"
+    }
+}

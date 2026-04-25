@@ -1,27 +1,65 @@
 # NerdyGeek
 
-> Auto-discover official docs. Keep coding with fresh references.
+> Live docs for coding agents. Fresh references, version-aware answers, less guessing.
 
 [![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-Plugin-blue)](https://github.com/docxbox/NerdyGeek)
 [![MCP Server](https://img.shields.io/badge/MCP-Server-black)](https://modelcontextprotocol.io/)
 [![MIT License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/docxbox/NerdyGeek?style=social)](https://github.com/docxbox/NerdyGeek/stargazers)
 
-NerdyGeek is a TypeScript Node.js MCP server and Claude Code plugin that gives coding agents a single tool: `search_docs`.
+NerdyGeek is a TypeScript Node.js MCP server and Claude Code plugin for coding agents that need current documentation while they work.
 
-When an agent gets stuck, NerdyGeek detects the stack, finds the latest official documentation, resolves version context, ranks the most relevant sections, filters noise, and returns a structured answer with code examples and source links.
+It uses a hybrid docs-intelligence approach:
+- dynamic discovery and ranking when that is reliable
+- curated authoritative fallbacks where the ecosystem is noisy or ambiguous
+
+That tradeoff keeps the tool practical for real coding sessions while still preferring official sources and deterministic output.
+
+## What NerdyGeek Does
+
+NerdyGeek currently exposes three MCP tools:
+
+- `search_docs`
+- `diff_docs`
+- `scan_deprecations`
+
+These tools help agents:
+- fetch current official docs for a query
+- compare version changes and migration notes
+- scan source code for deprecated or removed APIs
 
 ## Why NerdyGeek
 
-- No static docs registry
-- Dynamic official-doc discovery
-- Version-aware lookups from query and `package.json`
+- Version-aware docs lookup
+- Official-source prioritization
+- Hybrid discovery for better reliability
 - Deterministic ranking and validation
-- Structured responses for agent workflows
-- Works locally with Claude Code and Codex
-- Can also be deployed as a public HTTP MCP server
+- Structured outputs for agents
+- Local use with Claude Code and Codex
+- Optional public HTTP MCP deployment
 
-## What The Tool Returns
+## Tools
+
+### `search_docs`
+
+Fetch version-aware official documentation for a query.
+
+Input example:
+
+```json
+{
+  "query": "next 14 server actions cookies",
+  "mode": "full",
+  "packageJson": {
+    "dependencies": {
+      "next": "^14.2.1",
+      "react": "^18.2.0"
+    }
+  }
+}
+```
+
+Output shape:
 
 ```ts
 type DocsResponse = {
@@ -34,32 +72,36 @@ type DocsResponse = {
 };
 ```
 
-Example input:
+### `diff_docs`
+
+Compare two versions of a stack and summarize:
+
+- new features
+- deprecated APIs
+- removed APIs
+- breaking changes
+
+Example:
 
 ```json
 {
-  "query": "next 14 server actions cookies",
-  "packageJson": {
-    "dependencies": {
-      "next": "^14.2.1",
-      "react": "^18.2.0"
-    }
-  }
+  "stack": "react",
+  "fromVersion": "18",
+  "toVersion": "19"
 }
 ```
 
-Example output:
+### `scan_deprecations`
+
+Scan source code against official deprecation or migration docs and return matches with line numbers.
+
+Example:
 
 ```json
 {
-  "stack": "nextjs",
-  "version": "14",
-  "answer": "Use cookies() from next/headers inside a Server Action to read and write cookies in the App Router.",
-  "code": "'use server'\\nimport { cookies } from 'next/headers'\\n...",
-  "sources": [
-    "https://nextjs.org/docs/app/api-reference/functions/cookies"
-  ],
-  "confidence": 0.82
+  "fileContent": "import { useEffect } from 'react';",
+  "stack": "react",
+  "version": "19"
 }
 ```
 
@@ -86,18 +128,11 @@ Then install NerdyGeek for your coding agent:
 
 This repo is packaged as a Claude Code plugin marketplace repo and also includes a project MCP config.
 
-Local project config:
+Marketplace install:
 
-```json
-{
-  "mcpServers": {
-    "nerdygeek": {
-      "command": "node",
-      "args": ["dist/src/stdio.js"],
-      "env": {}
-    }
-  }
-}
+```bash
+claude plugin marketplace add docxbox/NerdyGeek
+claude plugin install nerdygeek@nerdygeek
 ```
 
 Relevant files:
@@ -106,13 +141,6 @@ Relevant files:
 - [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json)
 - [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json)
 - [`skills/latest-docs/SKILL.md`](./skills/latest-docs/SKILL.md)
-
-Marketplace install:
-
-```bash
-claude plugin marketplace add docxbox/NerdyGeek
-claude plugin install nerdygeek@nerdygeek
-```
 
 ### Codex
 
@@ -169,20 +197,22 @@ http://127.0.0.1:3000/mcp
 
 ## How It Works
 
-NerdyGeek follows a deterministic docs-intelligence pipeline:
+NerdyGeek follows a hybrid docs-intelligence pipeline:
 
-1. Detect the likely stack from the query and optional `package.json`
-2. Discover official documentation sources dynamically
-3. Resolve version context from the query or dependency metadata
-4. Check the semantic cache
-5. Retrieve documentation pages
-6. Extract clean text and relevant code
-7. Rank chunks and code examples
-8. Validate the final response before returning it
+1. Detect the likely stack from the query and optional project metadata
+2. Resolve version context from the query, `package.json`, or supported lockfiles
+3. Discover official docs dynamically when possible
+4. Fall back to curated authoritative URLs when discovery is unreliable
+5. Retrieve relevant pages
+6. Extract clean text and code
+7. Rank chunks deterministically
+8. Validate the final result before returning it
 
 Core implementation:
 
 - [`src/searchDocs.ts`](./src/searchDocs.ts)
+- [`src/diffDocs.ts`](./src/diffDocs.ts)
+- [`src/scanDeprecations.ts`](./src/scanDeprecations.ts)
 - [`src/discovery.ts`](./src/discovery.ts)
 - [`src/retriever.ts`](./src/retriever.ts)
 - [`src/extractor.ts`](./src/extractor.ts)
@@ -203,6 +233,17 @@ Core implementation:
 - `npm run install:all`
 - `npm test`
 
+## Notes On Discovery
+
+NerdyGeek intentionally uses a hybrid strategy now.
+
+Pure auto-discovery sounds cleaner, but in practice some ecosystems are too noisy for reliable agent workflows. The current design prefers dynamic discovery first, then uses curated authoritative fallbacks for docs roots, changelogs, and deprecation guides where needed.
+
+That means:
+- better real-world reliability
+- fewer off-topic results
+- stronger official-source guarantees
+- less philosophical purity than a zero-registry design
 
 ## Star History
 

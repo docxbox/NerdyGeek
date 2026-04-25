@@ -5,12 +5,19 @@ import { extractRelevantCodeBlocks } from "./extractor.js";
 import { rankChunks } from "./ranker.js";
 import { retrieveDocs } from "./retriever.js";
 import { withRetry } from "./retry.js";
-import type { DocsResponse, PackageJson, RankedChunk, RetrievedDocument } from "./types.js";
+import type { DocsMode, DocsResponse, LockfileContext, PackageJson, RankedChunk, RetrievedDocument } from "./types.js";
 import { cacheKey, normalizeText, unique } from "./utils.js";
 import { resolveVersion } from "./version.js";
 
-function summarizeChunks(chunks: RankedChunk[], stack: string, version: string): string {
-  const selected = unique(chunks.slice(0, 4).map((chunk) => normalizeText(chunk.text))).slice(0, 3);
+const modeConfig: Record<DocsMode, { maxChunks: number; maxCodeBlocks: number; maxSources: number }> = {
+  quick: { maxChunks: 1, maxCodeBlocks: 1, maxSources: 1 },
+  full: { maxChunks: 3, maxCodeBlocks: 1, maxSources: 3 },
+  deep: { maxChunks: 6, maxCodeBlocks: 3, maxSources: 5 }
+};
+
+function summarizeChunks(chunks: RankedChunk[], stack: string, version: string, mode: DocsMode): string {
+  const { maxChunks } = modeConfig[mode];
+  const selected = unique(chunks.slice(0, maxChunks + 1).map((chunk) => normalizeText(chunk.text))).slice(0, maxChunks);
 
   if (selected.length === 0) {
     throw new Error(`No useful documentation content found for ${stack}`);
@@ -48,7 +55,7 @@ function scoreCodeBlock(code: string, query: string, url: string): number {
   return score;
 }
 
-function chooseBestCode(documents: RetrievedDocument[], rankedChunks: RankedChunk[], query: string): string | undefined {
+function chooseBestCodes(documents: RetrievedDocument[], rankedChunks: RankedChunk[], query: string, maxBlocks: number): string[] {
   const rankedUrls = unique(rankedChunks.map((chunk) => chunk.url));
   const orderedDocuments = [
     ...rankedUrls
@@ -64,7 +71,10 @@ function chooseBestCode(documents: RetrievedDocument[], rankedChunks: RankedChun
     }))
   );
 
-  return candidates.sort((a, b) => b.score - a.score || a.code.localeCompare(b.code))[0]?.code;
+  return candidates
+    .sort((a, b) => b.score - a.score || a.code.localeCompare(b.code))
+    .slice(0, maxBlocks)
+    .map((c) => c.code);
 }
 
 function computeConfidence(chunks: RankedChunk[], query: string): number {
@@ -92,12 +102,16 @@ function computeConfidence(chunks: RankedChunk[], query: string): number {
 
 export async function search_docs(input: {
   query: string;
+  mode?: DocsMode;
   packageJson?: PackageJson;
+  lockfiles?: LockfileContext;
 }): Promise<DocsResponse> {
-  const candidates = detectStack(input.query, input.packageJson);
+  const mode: DocsMode = input.mode ?? "full";
+  const { maxCodeBlocks, maxSources } = modeConfig[mode];
+  const candidates = detectStack(input.query, input.packageJson ?? input.lockfiles?.packageJson);
   const chosenStack = candidates[0] ?? "unknown";
-  const version = resolveVersion(chosenStack, input.query, input.packageJson);
-  const key = cacheKey(chosenStack, version, input.query);
+  const version = resolveVersion(chosenStack, input.query, input.packageJson, input.lockfiles);
+  const key = cacheKey(chosenStack, version, `${mode}:${input.query}`);
   const cached = semanticCache.getCache(key);
 
   if (cached) {
@@ -105,21 +119,21 @@ export async function search_docs(input: {
   }
 
   const result = await withRetry(async () => {
-    const officialUrl = await discoverFrameworkDocs(chosenStack);
+    const officialUrl = await discoverFrameworkDocs(chosenStack, input.query);
     const documents = await retrieveDocs([officialUrl], input.query);
     const chunks = rankChunks(documents, input.query);
-    const code = chooseBestCode(documents, chunks, input.query);
-    const sources = unique([officialUrl, ...chunks.slice(0, 3).map((chunk) => chunk.url)]).slice(0, 3);
+    const codes = chooseBestCodes(documents, chunks, input.query, maxCodeBlocks);
+    const sources = unique([officialUrl, ...chunks.slice(0, maxSources).map((chunk) => chunk.url)]).slice(0, maxSources);
     const response: DocsResponse = {
       stack: chosenStack,
       version,
-      answer: summarizeChunks(chunks, chosenStack, version),
+      answer: summarizeChunks(chunks, chosenStack, version, mode),
       sources: sources.length > 0 ? sources : [officialUrl],
       confidence: computeConfidence(chunks, input.query)
     };
 
-    if (code) {
-      response.code = code;
+    if (codes.length > 0) {
+      response.code = codes.join("\n\n---\n\n");
     }
 
     return response;

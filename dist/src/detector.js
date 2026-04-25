@@ -2,27 +2,155 @@ import { getAllDependencies, normalizeText, sanitizeFrameworkName, unique } from
 const knownRules = [
     {
         stack: "nextjs",
-        keywords: ["next", "server actions", "app router"],
+        keywords: ["next", "server actions", "app router", "next.js", "nextjs"],
         dependencies: ["next"]
     },
     {
         stack: "react",
-        keywords: ["react", "hooks", "jsx"],
+        keywords: ["react", "hooks", "jsx", "useeffect", "usestate", "usememo", "useref", "usecontext", "usecallback"],
         dependencies: ["react", "react-dom"]
     },
     {
+        stack: "vue",
+        keywords: ["vue", "vuex", "pinia", "nuxt", "composition api", "options api", "vue router"],
+        dependencies: ["vue", "nuxt", "pinia", "@vue/core"]
+    },
+    {
+        stack: "svelte",
+        keywords: ["svelte", "sveltekit", "svelte store", "svelte component"],
+        dependencies: ["svelte", "@sveltejs/kit"]
+    },
+    {
+        stack: "angular",
+        keywords: ["angular", "rxjs", "ngrx", "angular cli", "ngmodule", "ngfor", "ngif", "injectable"],
+        dependencies: ["@angular/core", "@angular/common"]
+    },
+    {
         stack: "django",
-        keywords: ["django", "drf"],
+        keywords: ["django", "drf", "djangorestframework", "django orm", "django view", "django model"],
         dependencies: ["django", "djangorestframework"]
     },
     {
+        stack: "flask",
+        keywords: ["flask", "flask route", "flask blueprint", "flask sqlalchemy", "werkzeug"],
+        dependencies: ["flask"]
+    },
+    {
+        stack: "fastapi",
+        keywords: ["fastapi", "pydantic", "starlette", "uvicorn", "fastapi route"],
+        dependencies: ["fastapi"]
+    },
+    {
         stack: "express",
-        keywords: ["express", "node", "api"],
+        keywords: ["express", "expressjs", "express router", "express middleware"],
         dependencies: ["express"]
     },
     {
         stack: "go",
-        keywords: ["golang", "goroutine", "go modules", "go test", "go mod", "go build"],
+        keywords: [
+            "golang", "goroutine", "go modules", "go test", "go mod", "go build",
+            "net/http", "net/url", "net/rpc", "fmt.", "os.open", "io.reader", "bufio",
+            "gorilla", "servemux", "handlefunc", "http.handle", "http.serve",
+            "go routing", "go http", "chi router", "gin framework", "echo framework",
+            "go context", "go channel", "go interface", "go struct", "go defer"
+        ],
+        dependencies: []
+    },
+    {
+        stack: "rust",
+        keywords: [
+            "rust", "cargo", "tokio", "actix", "axum", "wasm",
+            "ownership", "borrow checker", "lifetime", "trait impl",
+            "rust async", "rust closure", "rust enum", "rust match", "rust iterator",
+            "crate", "mod ", "use std", "fn main", "impl ", "pub fn"
+        ],
+        dependencies: []
+    },
+    {
+        stack: "python",
+        keywords: [
+            "python", "pip", "asyncio", "pytest", "dataclass",
+            "def ", "import os", "import sys", "from typing", "__init__",
+            "list comprehension", "decorator", "context manager", "generator"
+        ],
+        dependencies: []
+    },
+    {
+        stack: "ruby",
+        keywords: ["ruby", "rails", "sinatra", "rake", "bundler", "activerecord", "rspec", "gem "],
+        dependencies: []
+    },
+    {
+        stack: "php",
+        keywords: ["php", "laravel", "symfony", "composer", "artisan", "eloquent", "blade template"],
+        dependencies: []
+    },
+    {
+        stack: "java",
+        keywords: [
+            "java", "spring", "maven", "gradle", "junit", "hibernate",
+            "springboot", "spring mvc", "java stream", "java generics", "java annotation"
+        ],
+        dependencies: []
+    },
+    {
+        stack: "kotlin",
+        keywords: ["kotlin", "coroutines", "ktor", "jetpack compose", "android kotlin", "kotlin flow", "kotlin sealed"],
+        dependencies: []
+    },
+    {
+        stack: "swift",
+        keywords: ["swift", "swiftui", "xcode", "ios", "combine", "swift async", "swift actor", "swift protocol"],
+        dependencies: []
+    },
+    {
+        stack: "csharp",
+        keywords: ["c#", "csharp", ".net", "dotnet", "asp.net", "entity framework", "linq", "nuget", "blazor"],
+        dependencies: []
+    },
+    {
+        stack: "postgres",
+        keywords: ["postgres", "postgresql", "pg", "psql", "plpgsql", "pg_", "postgres index", "postgres query"],
+        dependencies: ["pg", "postgres", "pgpool"]
+    },
+    {
+        stack: "mysql",
+        keywords: ["mysql", "mariadb", "innodb", "mysql query", "mysql index"],
+        dependencies: ["mysql", "mysql2"]
+    },
+    {
+        stack: "redis",
+        keywords: ["redis", "redis cache", "redis pubsub", "redis stream", "redis lua"],
+        dependencies: ["redis", "ioredis", "@upstash/redis"]
+    },
+    {
+        stack: "mongodb",
+        keywords: ["mongodb", "mongoose", "atlas", "bson", "aggregation pipeline", "mongodb query"],
+        dependencies: ["mongodb", "mongoose"]
+    },
+    {
+        stack: "docker",
+        keywords: ["docker", "dockerfile", "docker compose", "docker build", "container image", "docker layer"],
+        dependencies: []
+    },
+    {
+        stack: "kubernetes",
+        keywords: ["kubernetes", "kubectl", "helm", "pod", "deployment yaml", "ingress", "configmap", "secret k8s"],
+        dependencies: []
+    },
+    {
+        stack: "terraform",
+        keywords: ["terraform", "hcl", "tfstate", "provider block", "resource block", "terraform plan"],
+        dependencies: []
+    },
+    {
+        stack: "graphql",
+        keywords: ["graphql", "gql", "resolver", "schema definition", "apollo", "graphql query", "graphql mutation"],
+        dependencies: ["graphql", "@apollo/server", "@apollo/client"]
+    },
+    {
+        stack: "grpc",
+        keywords: ["grpc", "protobuf", "protocol buffer", ".proto", "grpc service", "grpc stream"],
         dependencies: []
     }
 ];

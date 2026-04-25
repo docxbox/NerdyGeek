@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { SemanticCache } from "../src/cache.js";
 import { detectStack } from "../src/detector.js";
-import { directProbeUrlsForTesting, searchQueriesForTesting } from "../src/discovery.js";
+import { directProbeUrlsForTesting, discoverChangelogUrl, discoverDeprecationUrl, searchQueriesForTesting } from "../src/discovery.js";
+import { classifyChunk } from "../src/diffDocs.js";
 import { extract, extractRelevantCodeBlocks } from "../src/extractor.js";
 import { rankChunks } from "../src/ranker.js";
+import { extractApiCalls, matchDeprecation } from "../src/scanDeprecations.js";
 import { isLikelyOfficialSourceUrl } from "../src/utils.js";
 import { validate } from "../src/validation.js";
 import { resolveVersion } from "../src/version.js";
@@ -156,6 +158,88 @@ export async function create() {
       confidence: 0.82
     })
   );
+
+  // --- detector: expanded stacks ---
+  assert.equal(detectStack("net/http ServeMux routing")[0], "go");
+  assert.equal(detectStack("gorilla mux handler")[0], "go");
+  assert.equal(detectStack("tokio async runtime rust")[0], "rust");
+  assert.equal(detectStack("cargo crate lifetime trait")[0], "rust");
+  assert.equal(detectStack("python asyncio event loop")[0], "python");
+  assert.equal(detectStack("vue composition api ref reactive")[0], "vue");
+  assert.equal(detectStack("svelte store writable")[0], "svelte");
+  assert.equal(detectStack("angular injectable ngmodule")[0], "angular");
+  assert.equal(detectStack("postgres pg query index")[0], "postgres");
+  assert.equal(detectStack("redis pubsub stream command")[0], "redis");
+  assert.equal(detectStack("kubernetes kubectl pod deployment")[0], "kubernetes");
+  assert.equal(detectStack("grpc protobuf service stream")[0], "grpc");
+
+  // --- version: lockfile sources ---
+  assert.equal(
+    resolveVersion("go", "net/http routing", undefined, { goMod: "module myapp\n\ngo 1.22\n" }),
+    "1"
+  );
+  assert.equal(
+    resolveVersion("tokio", "tokio async", undefined, {
+      cargoToml: '[dependencies]\ntokio = { version = "1.28.0", features = ["full"] }\n'
+    }),
+    "1"
+  );
+  assert.equal(
+    resolveVersion("flask", "flask route", undefined, {
+      requirementsTxt: "Flask==3.0.2\nrequests>=2.31.0\n"
+    }),
+    "3"
+  );
+  assert.equal(
+    resolveVersion("rails", "activerecord", undefined, {
+      gemfileLock: "GEM\n  specs:\n    rails (7.1.3)\n    rake (13.0.6)\n"
+    }),
+    "7"
+  );
+
+  // --- classifyChunk ---
+  assert.equal(classifyChunk("This method was deprecated in React 18."), "deprecated");
+  assert.equal(classifyChunk("The legacy API has been removed in version 19."), "removed");
+  assert.equal(classifyChunk("This is a breaking change introduced in 2.0."), "breaking");
+  assert.equal(classifyChunk("Added support for concurrent rendering."), "new");
+  assert.equal(classifyChunk("This is an unrelated sentence about the weather."), null);
+
+  // --- extractApiCalls ---
+  const sampleCode = `
+import { useState, useEffect } from 'react';
+import axios from 'axios';
+const data = axios.get('/api');
+class MyComponent extends React.Component {
+  render() { return null; }
+}
+`.trim();
+  const calls = extractApiCalls(sampleCode);
+  const names = calls.map((c) => c.name);
+  assert.ok(names.includes("useState"));
+  assert.ok(names.includes("useEffect"));
+  assert.ok(names.includes("axios.get"));
+
+  // --- matchDeprecation ---
+  const deprecationDoc = `
+    The componentWillMount lifecycle method is deprecated, use componentDidMount instead.
+    The findDOMNode method has been removed in React 19.
+    The legacy Context API is deprecated and will be removed in a future version.
+  `;
+  const match1 = matchDeprecation("componentWillMount", deprecationDoc);
+  assert.ok(match1 !== null, "componentWillMount should match deprecation");
+  assert.equal(match1?.replacement, "componentDidMount");
+
+  const match2 = matchDeprecation("findDOMNode", deprecationDoc);
+  assert.ok(match2 !== null, "findDOMNode should match removal");
+
+  const noMatch = matchDeprecation("useState", deprecationDoc);
+  assert.equal(noMatch, null, "useState should not match deprecation");
+
+  // --- discoverChangelogUrl / discoverDeprecationUrl use central registry ---
+  assert.equal(await discoverChangelogUrl("go"), "https://go.dev/doc/devel/release");
+  assert.equal(await discoverChangelogUrl("react"), "https://react.dev/blog");
+  assert.equal(await discoverDeprecationUrl("react"), "https://react.dev/blog/2024/04/25/react-19-upgrade-guide");
+  assert.equal(await discoverDeprecationUrl("kubernetes"), "https://kubernetes.io/docs/reference/using-api/deprecation-guide/");
 
   console.log("All tests passed");
 }
