@@ -1,4 +1,5 @@
 import type { DocsResponse } from "./types.js";
+import { isLikelyOfficialSourceUrl } from "./utils.js";
 
 export function validate(response: DocsResponse): DocsResponse {
   if (!response.stack) {
@@ -14,11 +15,7 @@ export function validate(response: DocsResponse): DocsResponse {
   }
 
   if (
-    !response.sources.some(
-      (url) =>
-        !/(medium\.com|dev\.to|stackoverflow\.com|reddit\.com)/i.test(url) &&
-        /(docs|developer|reference|guide|api)/i.test(url)
-    )
+    !response.sources.some((url) => isLikelyOfficialSourceUrl(url))
   ) {
     throw new Error("Validation failed: at least one official source URL is required");
   }

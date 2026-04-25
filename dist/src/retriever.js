@@ -1,9 +1,12 @@
 import * as cheerio from "cheerio";
 import { config } from "./config.js";
 import { fetchWithTimeout } from "./http.js";
-import { safeHostname, toAbsoluteUrl, unique } from "./utils.js";
+import { isLikelyOfficialSourceUrl, safeHostname, toAbsoluteUrl, unique } from "./utils.js";
 function inferSourceType(url) {
     const normalized = url.toLowerCase();
+    if (/(blog|news)/.test(normalized) && isLikelyOfficialSourceUrl(url)) {
+        return "official";
+    }
     if (/(api|reference)/.test(normalized)) {
         return "api";
     }

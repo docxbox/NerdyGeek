@@ -1,3 +1,4 @@
+import { isLikelyOfficialSourceUrl } from "./utils.js";
 export function validate(response) {
     if (!response.stack) {
         throw new Error("Validation failed: stack must exist");
@@ -8,8 +9,7 @@ export function validate(response) {
     if (!response.sources.length) {
         throw new Error("Validation failed: at least one source is required");
     }
-    if (!response.sources.some((url) => !/(medium\.com|dev\.to|stackoverflow\.com|reddit\.com)/i.test(url) &&
-        /(docs|developer|reference|guide|api)/i.test(url))) {
+    if (!response.sources.some((url) => isLikelyOfficialSourceUrl(url))) {
         throw new Error("Validation failed: at least one official source URL is required");
     }
     if (response.answer.length < 20) {

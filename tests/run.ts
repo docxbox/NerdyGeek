@@ -4,6 +4,7 @@ import { detectStack } from "../src/detector.js";
 import { directProbeUrlsForTesting, searchQueriesForTesting } from "../src/discovery.js";
 import { extract, extractRelevantCodeBlocks } from "../src/extractor.js";
 import { rankChunks } from "../src/ranker.js";
+import { isLikelyOfficialSourceUrl } from "../src/utils.js";
 import { validate } from "../src/validation.js";
 import { resolveVersion } from "../src/version.js";
 import { cacheKey } from "../src/utils.js";
@@ -27,6 +28,8 @@ async function main(): Promise<void> {
   const goProbeUrls = directProbeUrlsForTesting("go");
   assert.ok(goProbeUrls.includes("https://go.dev/doc"));
   assert.ok(goProbeUrls.includes("https://go.dev/"));
+  assert.equal(isLikelyOfficialSourceUrl("https://go.dev/blog/routing-enhancements"), true);
+  assert.equal(isLikelyOfficialSourceUrl("https://dev.to/someone/go-routing"), false);
 
   const nextQueries = searchQueriesForTesting("nextjs");
   assert.ok(nextQueries.includes("next.js official documentation"));
@@ -141,6 +144,16 @@ export async function create() {
       answer: "<div>bad html</div>",
       sources: ["https://react.dev/reference/react"],
       confidence: 0.85
+    })
+  );
+
+  assert.doesNotThrow(() =>
+    validate({
+      stack: "go",
+      version: "1",
+      answer: "go 1: ServeMux routing enhancements are documented on the official Go website.",
+      sources: ["https://go.dev/blog/routing-enhancements"],
+      confidence: 0.82
     })
   );
 
