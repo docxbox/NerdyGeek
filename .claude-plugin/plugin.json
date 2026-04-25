@@ -1,0 +1,26 @@
+{
+  "name": "nerdygeek",
+  "description": "Version-aware documentation intelligence for coding agents through an MCP server and auto-use skill.",
+  "version": "1.0.0",
+  "author": {
+    "name": "NerdyGeek"
+  },
+  "license": "UNLICENSED",
+  "keywords": [
+    "mcp",
+    "documentation",
+    "coding-agent",
+    "reference",
+    "frameworks"
+  ],
+  "mcpServers": {
+    "nerdygeek": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/dist/src/stdio.js"
+      ],
+      "env": {}
+    }
+  }
+}

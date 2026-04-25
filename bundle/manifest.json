@@ -1,0 +1,47 @@
+{
+  "manifest_version": "0.3",
+  "name": "nerdygeek",
+  "display_name": "NerdyGeek",
+  "version": "1.0.0",
+  "description": "Auto-discover official framework documentation with version-aware retrieval and deterministic validation.",
+  "long_description": "NerdyGeek is a documentation intelligence MCP server for Claude Desktop. It detects frameworks from a query and optional package.json context, discovers official documentation dynamically, resolves the most relevant version, retrieves and ranks authoritative content, and returns a deterministic structured answer through the search_docs tool.",
+  "icon": "icon.png",
+  "author": {
+    "name": "NerdyGeek"
+  },
+  "server": {
+    "type": "node",
+    "entry_point": "server/stdio.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/server/stdio.js"
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "search_docs",
+      "description": "Search official documentation for frameworks and libraries with version-aware retrieval."
+    }
+  ],
+  "keywords": [
+    "documentation",
+    "frameworks",
+    "typescript",
+    "mcp",
+    "developer-tools"
+  ],
+  "license": "UNLICENSED",
+  "compatibility": {
+    "claude_desktop": ">=1.0.0",
+    "platforms": [
+      "win32",
+      "darwin",
+      "linux"
+    ],
+    "runtimes": {
+      "node": ">=20.11.0"
+    }
+  }
+}

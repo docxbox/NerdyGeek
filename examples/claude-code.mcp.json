@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "nerdygeek": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\acer\\Downloads\\NerdyGeek\\dist\\src\\stdio.js"
+      ],
+      "env": {}
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "nerdygeek": {
+      "command": "node",
+      "args": [
+        "dist/src/stdio.js"
+      ],
+      "env": {}
+    }
+  }
+}
