@@ -1,14 +1,40 @@
 # NerdyGeek
 
-Production-ready TypeScript MCP server and Claude bundle exposing a single tool: `search_docs`.
+> Auto-discover official docs. Keep coding with fresh references.
 
-It auto-detects frameworks from the query and optional `packageJson`, discovers official docs dynamically, resolves version context, retrieves and ranks documentation, validates the final response, and returns deterministic structured output.
+[![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-Plugin-blue)](https://github.com/docxbox/NerdyGeek)
+[![MCP Server](https://img.shields.io/badge/MCP-Server-black)](https://modelcontextprotocol.io/)
+[![MIT License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/docxbox/NerdyGeek?style=social)](https://github.com/docxbox/NerdyGeek/stargazers)
 
-## Tool
+NerdyGeek is a TypeScript Node.js MCP server and Claude Code plugin that gives coding agents a single tool: `search_docs`.
 
-`search_docs`
+When an agent gets stuck, NerdyGeek detects the stack, finds the latest official documentation, resolves version context, ranks the most relevant sections, filters noise, and returns a structured answer with code examples and source links.
 
-Input:
+## Why NerdyGeek
+
+- No static docs registry
+- Dynamic official-doc discovery
+- Version-aware lookups from query and `package.json`
+- Deterministic ranking and validation
+- Structured responses for agent workflows
+- Works locally with Claude Code and Codex
+- Can also be deployed as a public HTTP MCP server
+
+## What The Tool Returns
+
+```ts
+type DocsResponse = {
+  stack: string;
+  version: string;
+  answer: string;
+  code?: string;
+  sources: string[];
+  confidence: number;
+};
+```
+
+Example input:
 
 ```json
 {
@@ -22,58 +48,31 @@ Input:
 }
 ```
 
-Output:
+Example output:
 
 ```json
 {
   "stack": "nextjs",
   "version": "14",
-  "answer": "nextjs 14: ...",
-  "code": "optional code sample",
+  "answer": "Use cookies() from next/headers inside a Server Action to read and write cookies in the App Router.",
+  "code": "'use server'\\nimport { cookies } from 'next/headers'\\n...",
   "sources": [
-    "https://nextjs.org/docs"
+    "https://nextjs.org/docs/app/api-reference/functions/cookies"
   ],
-  "confidence": 0.85
+  "confidence": 0.82
 }
 ```
 
-## Run
+## Install
 
-Install and build:
-
-```bash
-npm install
-npm run build
-```
-
-Local stdio MCP server:
-
-```bash
-npm start
-```
-
-Remote/HTTP MCP server:
-
-```bash
-npm run start:http
-```
-
-The HTTP MCP endpoint is:
-
-```text
-http://127.0.0.1:3000/mcp
-```
-
-## Local Install
-
-For open-source local use, the intended flow is:
+Clone the repo and build once:
 
 ```bash
 npm install
 npm run build
 ```
 
-Then install for your coding agent:
+Then install NerdyGeek for your coding agent:
 
 | Agent | Install |
 |---|---|
@@ -81,55 +80,13 @@ Then install for your coding agent:
 | Codex | `npm run install:codex` |
 | Both | `npm run install:all` |
 
-What these do:
+## Agent Setup
 
-- `Claude Code`: writes a project `.mcp.json` pointing at `dist/src/stdio.js`
-- `Codex`: updates `~/.codex/config.toml` with `http://127.0.0.1:3000/mcp` and creates a local launcher script at [scripts/start-codex-local.ps1](C:/Users/acer/Downloads/NerdyGeek/scripts/start-codex-local.ps1)
+### Claude Code
 
-For Codex local use, start the local MCP server after install:
+This repo is packaged as a Claude Code plugin marketplace repo and also includes a project MCP config.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\start-codex-local.ps1
-```
-
-## Claude Code Marketplace
-
-This repo is now structured as a Claude Code plugin marketplace:
-
-- marketplace catalog: [.claude-plugin/marketplace.json](C:/Users/acer/Downloads/NerdyGeek/.claude-plugin/marketplace.json)
-- plugin manifest: [.claude-plugin/plugin.json](C:/Users/acer/Downloads/NerdyGeek/.claude-plugin/plugin.json)
-- bundled plugin skill: [skills/latest-docs/SKILL.md](C:/Users/acer/Downloads/NerdyGeek/skills/latest-docs/SKILL.md)
-
-Once this repository is published, Claude Code users can install it with:
-
-```bash
-claude plugin marketplace add <owner>/<repo>
-claude plugin install nerdygeek@nerdygeek
-```
-
-If you submit it to Anthropic’s official marketplace, the same plugin package can be used there as well.
-
-## Claude Desktop
-
-Example local MCP config:
-
-```json
-{
-  "mcpServers": {
-    "nerdygeek": {
-      "command": "node",
-      "args": ["C:\\\\Users\\\\acer\\\\Downloads\\\\NerdyGeek\\\\dist\\\\src\\\\stdio.js"],
-      "env": {}
-    }
-  }
-}
-```
-
-## Claude Code
-
-Claude Code supports project-scoped MCP servers through `.mcp.json`.
-
-This repo now includes a ready-to-use project config at [.mcp.json](C:/Users/acer/Downloads/NerdyGeek/.mcp.json):
+Local project config:
 
 ```json
 {
@@ -143,42 +100,97 @@ This repo now includes a ready-to-use project config at [.mcp.json](C:/Users/ace
 }
 ```
 
-Build first, then open the repo in Claude Code:
+Relevant files:
+
+- [`.mcp.json`](./.mcp.json)
+- [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json)
+- [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json)
+- [`skills/latest-docs/SKILL.md`](./skills/latest-docs/SKILL.md)
+
+Marketplace install:
 
 ```bash
-npm run build
+claude plugin marketplace add docxbox/NerdyGeek
+claude plugin install nerdygeek@nerdygeek
 ```
 
-You can also use the absolute-path example in [examples/claude-code.mcp.json](C:/Users/acer/Downloads/NerdyGeek/examples/claude-code.mcp.json).
+### Codex
 
-If you want users to always hit the latest hosted server instead of a local build, use an HTTP MCP config like [examples/claude-code.remote.mcp.json](C:/Users/acer/Downloads/NerdyGeek/examples/claude-code.remote.mcp.json):
-
-```json
-{
-  "mcpServers": {
-    "nerdygeek": {
-      "type": "http",
-      "url": "https://your-domain.example.com/mcp"
-    }
-  }
-}
-```
-
-## Codex
-
-Example Codex config using the HTTP MCP endpoint:
+NerdyGeek exposes an HTTP MCP endpoint for Codex:
 
 ```toml
 [mcp_servers.nerdygeek]
 url = "http://127.0.0.1:3000/mcp"
 ```
 
-For a hosted public deployment, use [examples/codex-config.public.toml](C:/Users/acer/Downloads/NerdyGeek/examples/codex-config.public.toml):
+Install helper:
 
-```toml
-[mcp_servers.nerdygeek]
-url = "https://your-domain.example.com/mcp"
+```bash
+npm run install:codex
 ```
+
+Then start the local MCP server:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-codex-local.ps1
+```
+
+Relevant example configs:
+
+- [`examples/codex-config.toml`](./examples/codex-config.toml)
+- [`examples/codex-config.public.toml`](./examples/codex-config.public.toml)
+
+### Claude Desktop
+
+You can also use the bundled Claude Desktop package:
+
+- [`artifacts/nerdygeek-1.0.0.mcpb`](./artifacts/nerdygeek-1.0.0.mcpb)
+- [`bundle/manifest.json`](./bundle/manifest.json)
+
+## Run Locally
+
+Stdio MCP server:
+
+```bash
+npm start
+```
+
+HTTP MCP server:
+
+```bash
+npm run start:http
+```
+
+Local HTTP endpoint:
+
+```text
+http://127.0.0.1:3000/mcp
+```
+
+## How It Works
+
+NerdyGeek follows a deterministic docs-intelligence pipeline:
+
+1. Detect the likely stack from the query and optional `package.json`
+2. Discover official documentation sources dynamically
+3. Resolve version context from the query or dependency metadata
+4. Check the semantic cache
+5. Retrieve documentation pages
+6. Extract clean text and relevant code
+7. Rank chunks and code examples
+8. Validate the final response before returning it
+
+Core implementation:
+
+- [`src/searchDocs.ts`](./src/searchDocs.ts)
+- [`src/discovery.ts`](./src/discovery.ts)
+- [`src/retriever.ts`](./src/retriever.ts)
+- [`src/extractor.ts`](./src/extractor.ts)
+- [`src/ranker.ts`](./src/ranker.ts)
+- [`src/validation.ts`](./src/validation.ts)
+- [`src/mcpServer.ts`](./src/mcpServer.ts)
+- [`src/httpServer.ts`](./src/httpServer.ts)
+- [`src/stdio.ts`](./src/stdio.ts)
 
 ## Scripts
 
@@ -191,36 +203,29 @@ url = "https://your-domain.example.com/mcp"
 - `npm run install:all`
 - `npm test`
 
-## MCP Bundle
-
-`npm run bundle` creates a Claude Desktop `.mcpb` bundle in `artifacts/`.
-
-## Client Matrix
-
-- `Claude Code`: run `npm run install:claude-code`
-- `Claude Desktop`: install [artifacts/nerdygeek-1.0.0.mcpb](C:/Users/acer/Downloads/NerdyGeek/artifacts/nerdygeek-1.0.0.mcpb)
-- `Codex`: run `npm run install:codex`, then start the local HTTP MCP
-
 ## Public Deployment
 
-If you want `NerdyGeek` to stay current for both Claude and Codex users, publish the HTTP MCP server and give clients a stable HTTPS URL such as:
+If you want users to always hit the latest behavior, deploy the HTTP MCP server and give clients a stable HTTPS URL:
 
 ```text
 https://your-domain.example.com/mcp
 ```
 
-That avoids stale local bundles and old checked-in configs. In practice:
-
-- `Codex`: point `mcp_servers.nerdygeek.url` at the public URL
-- `Claude Code`: use an HTTP `.mcp.json` entry pointing at the same URL
-- `Claude Desktop`: prefer a remote MCP config if you want users to always get the latest server behavior; use the `.mcpb` bundle when you want a packaged local install
-
-Recommended production safeguards for a public MCP:
+Recommended safeguards for a public deployment:
 
 - HTTPS only
+- timeouts on retrieval and search
 - request logging with redaction
 - per-IP rate limiting
-- timeouts on fetch and search
-- clear `User-Agent`
-- health endpoint monitoring
+- health monitoring
 - stable hostname so users do not keep changing configs
+
+## Star History
+
+If NerdyGeek is useful, give it a star and help more agents stop coding from stale docs.
+
+[![Star History Chart](https://api.star-history.com/svg?repos=docxbox/NerdyGeek&type=Date)](https://www.star-history.com/#docxbox/NerdyGeek&Date)
+
+## License
+
+[MIT](./LICENSE)
