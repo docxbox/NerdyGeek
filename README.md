@@ -203,22 +203,6 @@ Core implementation:
 - `npm run install:all`
 - `npm test`
 
-## Public Deployment
-
-If you want users to always hit the latest behavior, deploy the HTTP MCP server and give clients a stable HTTPS URL:
-
-```text
-https://your-domain.example.com/mcp
-```
-
-Recommended safeguards for a public deployment:
-
-- HTTPS only
-- timeouts on retrieval and search
-- request logging with redaction
-- per-IP rate limiting
-- health monitoring
-- stable hostname so users do not keep changing configs
 
 ## Star History
 
