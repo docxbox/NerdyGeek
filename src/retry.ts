@@ -1,7 +1,7 @@
-import type { DocsResponse } from "./types.js";
+import type { NerdyGeekResponse } from "./types.js";
 import { validate } from "./validation.js";
 
-export async function withRetry(fn: () => Promise<DocsResponse>, retries = 2): Promise<DocsResponse> {
+export async function withRetry<T extends NerdyGeekResponse>(fn: () => Promise<T>, retries = 2): Promise<T> {
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {

@@ -1,0 +1,26 @@
+export class FixedWindowRateLimiter {
+    maxRequests;
+    windowMs;
+    store = new Map();
+    constructor(maxRequests, windowMs) {
+        this.maxRequests = maxRequests;
+        this.windowMs = windowMs;
+    }
+    allow(key) {
+        const now = Date.now();
+        const current = this.store.get(key);
+        if (!current || now - current.startedAt >= this.windowMs) {
+            this.store.set(key, { startedAt: now, count: 1 });
+            return { allowed: true, retryAfterMs: 0 };
+        }
+        if (current.count >= this.maxRequests) {
+            return {
+                allowed: false,
+                retryAfterMs: Math.max(0, this.windowMs - (now - current.startedAt))
+            };
+        }
+        current.count += 1;
+        this.store.set(key, current);
+        return { allowed: true, retryAfterMs: 0 };
+    }
+}

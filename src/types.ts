@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 export type DocsMode = "quick" | "full" | "deep";
+export type NerdyGeekTool = "search_docs" | "diff_docs" | "scan_deprecations";
+export type CacheStatus = "hit" | "miss";
 
 export type PackageJson = {
   name?: string | undefined;
@@ -40,13 +42,25 @@ export type RankedChunk = {
   score: number;
 };
 
-export type DocsResponse = {
+export type NerdyGeekEnvelope = {
+  tool: NerdyGeekTool;
   stack: string;
   version: string;
-  answer: string;
+  mode: DocsMode;
+  summary: string;
+  actions: string[];
+  gotchas: string[];
   code?: string;
   sources: string[];
   confidence: number;
+  docHandle: string;
+  cacheStatus: CacheStatus;
+  retrievedAt: string;
+};
+
+export type SearchDocsResponse = NerdyGeekEnvelope & {
+  tool: "search_docs";
+  answer: string;
 };
 
 export type DiffEntry = {
@@ -55,12 +69,11 @@ export type DiffEntry = {
   replacement?: string;
 };
 
-export type DiffResponse = {
-  stack: string;
+export type DiffResponse = NerdyGeekEnvelope & {
+  tool: "diff_docs";
   fromVersion: string;
   toVersion: string;
   changes: DiffEntry[];
-  sources: string[];
 };
 
 export type DeprecationMatch = {
@@ -70,13 +83,13 @@ export type DeprecationMatch = {
   replacement?: string;
 };
 
-export type ScanResponse = {
-  stack: string;
-  version: string;
+export type ScanResponse = NerdyGeekEnvelope & {
+  tool: "scan_deprecations";
   deprecated: DeprecationMatch[];
   removed: DeprecationMatch[];
-  sources: string[];
 };
+
+export type NerdyGeekResponse = SearchDocsResponse | DiffResponse | ScanResponse;
 
 export const packageJsonSchema = z
   .object({
@@ -97,6 +110,23 @@ export const lockfileContextSchema = z.object({
 });
 
 export const docsModeSchema = z.enum(["quick", "full", "deep"]).default("full");
+export const cacheStatusSchema = z.enum(["hit", "miss"]);
+
+export const nerdyGeekEnvelopeSchema = z.object({
+  tool: z.enum(["search_docs", "diff_docs", "scan_deprecations"]),
+  stack: z.string().min(1),
+  version: z.string().min(1),
+  mode: docsModeSchema,
+  summary: z.string().min(20),
+  actions: z.array(z.string().min(1)).max(5),
+  gotchas: z.array(z.string().min(1)).max(5),
+  code: z.string().min(1).optional(),
+  sources: z.array(z.string().url()).min(1),
+  confidence: z.number().min(0).max(1),
+  docHandle: z.string().min(3),
+  cacheStatus: cacheStatusSchema,
+  retrievedAt: z.string().min(10)
+});
 
 export const searchDocsRequestSchema = z.object({
   query: z.string().min(3),
@@ -105,11 +135,33 @@ export const searchDocsRequestSchema = z.object({
   lockfiles: lockfileContextSchema.optional()
 });
 
-export const docsResponseSchema = z.object({
-  stack: z.string().min(1),
-  version: z.string().min(1),
-  answer: z.string().min(1),
-  code: z.string().min(1).optional(),
-  sources: z.array(z.string().url()).min(1),
-  confidence: z.number().min(0).max(1)
+export const searchDocsResponseSchema = nerdyGeekEnvelopeSchema.extend({
+  tool: z.literal("search_docs"),
+  answer: z.string().min(20)
+});
+
+export const diffEntrySchema = z.object({
+  type: z.enum(["new", "deprecated", "removed", "breaking"]),
+  description: z.string().min(5),
+  replacement: z.string().min(1).optional()
+});
+
+export const diffResponseSchema = nerdyGeekEnvelopeSchema.extend({
+  tool: z.literal("diff_docs"),
+  fromVersion: z.string().min(1),
+  toVersion: z.string().min(1),
+  changes: z.array(diffEntrySchema)
+});
+
+export const deprecationMatchSchema = z.object({
+  line: z.number().int().positive(),
+  api: z.string().min(1),
+  reason: z.string().min(5),
+  replacement: z.string().min(1).optional()
+});
+
+export const scanResponseSchema = nerdyGeekEnvelopeSchema.extend({
+  tool: z.literal("scan_deprecations"),
+  deprecated: z.array(deprecationMatchSchema),
+  removed: z.array(deprecationMatchSchema)
 });

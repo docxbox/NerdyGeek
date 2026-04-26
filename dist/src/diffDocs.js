@@ -1,26 +1,23 @@
 import * as cheerio from "cheerio";
+import { semanticCache } from "./cache.js";
+import { cacheKey, normalizeText, unique } from "./utils.js";
 import { fetchWithTimeout } from "./http.js";
 import { discoverChangelogUrl } from "./discovery.js";
+import { formatDiffDocsEnvelope } from "./formatter.js";
 import { retrieveDocs } from "./retriever.js";
-import { rankChunks } from "./ranker.js";
-import { normalizeText, unique } from "./utils.js";
-const deprecationSignals = [
-    /deprecat/i,
-    /no\s+longer\s+supported/i,
-    /migration\s+guide/i,
-    /upgrade\s+guide/i,
-];
+import { withRetry } from "./retry.js";
+const deprecationSignals = [/deprecat/i, /no\s+longer\s+supported/i, /migration\s+guide/i, /upgrade\s+guide/i];
 const newFeatureSignals = [/added/i, /introduced/i, /new\s+in/i, /feat(?:ure)?:/i, /support\s+for/i];
 const removedSignals = [/removed/i, /deleted/i, /dropped/i];
 const breakingSignals = [/breaking/i, /incompatible/i, /must\s+now/i, /no\s+longer/i];
 export function classifyChunk(text) {
-    if (removedSignals.some((r) => r.test(text)))
+    if (removedSignals.some((rule) => rule.test(text)))
         return "removed";
-    if (deprecationSignals.some((r) => r.test(text)))
+    if (deprecationSignals.some((rule) => rule.test(text)))
         return "deprecated";
-    if (breakingSignals.some((r) => r.test(text)))
+    if (breakingSignals.some((rule) => rule.test(text)))
         return "breaking";
-    if (newFeatureSignals.some((r) => r.test(text)))
+    if (newFeatureSignals.some((rule) => rule.test(text)))
         return "new";
     return null;
 }
@@ -29,30 +26,22 @@ function scoreDiffDocument(document, stack, fromVersion, toVersion) {
     const text = normalizeText(document.html.replace(/<[^>]+>/g, " ")).toLowerCase().slice(0, 12000);
     const combined = `${url} ${text}`;
     let score = 0;
-    if (/(upgrade|migration)/.test(url)) {
+    if (/(upgrade|migration)/.test(url))
         score += 12;
-    }
-    if (/(changelog|release|releases|blog)/.test(url)) {
+    if (/(changelog|release|releases|blog)/.test(url))
         score += 4;
-    }
-    if (combined.includes(`${stack.toLowerCase()} ${toVersion.toLowerCase()}`)) {
+    if (combined.includes(`${stack.toLowerCase()} ${toVersion.toLowerCase()}`))
         score += 10;
-    }
-    if (combined.includes(`${stack.toLowerCase()} ${fromVersion.toLowerCase()}`)) {
+    if (combined.includes(`${stack.toLowerCase()} ${fromVersion.toLowerCase()}`))
         score += 4;
-    }
-    if (combined.includes(`v${toVersion.toLowerCase()}`) || combined.includes(`version ${toVersion.toLowerCase()}`)) {
+    if (combined.includes(`v${toVersion.toLowerCase()}`) || combined.includes(`version ${toVersion.toLowerCase()}`))
         score += 8;
-    }
-    if (combined.includes(`v${fromVersion.toLowerCase()}`) || combined.includes(`version ${fromVersion.toLowerCase()}`)) {
+    if (combined.includes(`v${fromVersion.toLowerCase()}`) || combined.includes(`version ${fromVersion.toLowerCase()}`))
         score += 3;
-    }
-    if (/(breaking|deprecated|removed|upgrade guide|migration guide)/.test(combined)) {
+    if (/(breaking|deprecated|removed|upgrade guide|migration guide)/.test(combined))
         score += 6;
-    }
-    if (/read more|you can also follow|posted here first/.test(combined)) {
+    if (/read more|you can also follow|posted here first/.test(combined))
         score -= 8;
-    }
     return score;
 }
 export function chooseBestDiffDocument(documents, stack, fromVersion, toVersion) {
@@ -78,12 +67,10 @@ function headingType(heading) {
 function toEntryDescription(heading, text) {
     const normalizedHeading = normalizeText(heading);
     const normalizedText = normalizeText(text);
-    if (!normalizedHeading) {
+    if (!normalizedHeading)
         return normalizedText;
-    }
-    if (normalizedText.toLowerCase().startsWith(normalizedHeading.toLowerCase())) {
+    if (normalizedText.toLowerCase().startsWith(normalizedHeading.toLowerCase()))
         return normalizedText;
-    }
     return `${normalizedHeading}: ${normalizedText}`;
 }
 export function extractStructuredDiffEntries(html) {
@@ -114,9 +101,8 @@ export function extractStructuredDiffEntries(html) {
             .filter((text) => text.length >= 20);
         for (const text of siblingTexts) {
             const type = inheritedType ?? classifyChunk(text);
-            if (!type) {
+            if (!type)
                 continue;
-            }
             const description = toEntryDescription(heading, text);
             if (!entries.some((entry) => entry.type === type && entry.description === description)) {
                 entries.push({ type, description });
@@ -128,87 +114,86 @@ export function extractStructuredDiffEntries(html) {
 function extractVersionSection(html, fromVersion, toVersion) {
     const $ = cheerio.load(html);
     const text = normalizeText($("main, article, body").first().text());
-    // Try to find the section between the two versions in the changelog text.
     const vFrom = fromVersion.replace(/\./g, "\\.");
     const vTo = toVersion.replace(/\./g, "\\.");
     const sectionPattern = new RegExp(`${vTo}[\\s\\S]{0,8000}?(?=${vFrom}|$)`, "i");
     const match = text.match(sectionPattern);
     return match?.[0] ?? text.slice(0, 6000);
 }
-async function fetchChangelogUrl(stack) {
-    return discoverChangelogUrl(stack);
-}
 export async function diff_docs(input) {
-    const { stack, fromVersion, toVersion } = input;
-    const changelogUrl = await fetchChangelogUrl(stack);
-    const query = `${stack} ${fromVersion} to ${toVersion} upgrade guide migration breaking changes deprecated removed`;
-    let bestSourceUrl = changelogUrl;
-    let sectionText = "";
-    try {
-        const response = await fetchWithTimeout(changelogUrl);
-        if (response.ok) {
-            const html = await response.text();
-            sectionText = extractVersionSection(html, fromVersion, toVersion);
-        }
+    const key = cacheKey(input.stack, `${input.fromVersion}->${input.toVersion}`, `diff:${input.stack}`);
+    const cached = semanticCache.getCache(key);
+    if (cached && cached.tool === "diff_docs") {
+        return {
+            ...cached,
+            cacheStatus: "hit"
+        };
     }
-    catch {
-        // Fall through to ranked-chunk approach
-    }
-    const docs = await retrieveDocs([changelogUrl], query);
-    const bestDocument = chooseBestDiffDocument(docs, stack, fromVersion, toVersion);
-    let structuredEntries = [];
-    if (bestDocument) {
-        bestSourceUrl = bestDocument.url;
-        structuredEntries = extractStructuredDiffEntries(bestDocument.html);
+    const result = await withRetry(async () => {
+        const changelogUrl = await discoverChangelogUrl(input.stack);
+        const query = `${input.stack} ${input.fromVersion} to ${input.toVersion} ` +
+            "upgrade guide migration breaking changes deprecated removed";
+        let bestSourceUrl = changelogUrl;
+        let sectionText = "";
         try {
-            const focusedSection = extractVersionSection(bestDocument.html, fromVersion, toVersion);
-            if (focusedSection.length > sectionText.length || /(upgrade|migration|breaking|deprecated|removed)/i.test(focusedSection)) {
-                sectionText = focusedSection;
+            const response = await fetchWithTimeout(changelogUrl);
+            if (response.ok) {
+                const html = await response.text();
+                sectionText = extractVersionSection(html, input.fromVersion, input.toVersion);
             }
         }
         catch {
-            // Keep current section text
+            // fall through
         }
-    }
-    if (!sectionText && structuredEntries.length === 0) {
-        const chunks = rankChunks(docs, query);
-        sectionText = chunks
-            .slice(0, 8)
-            .map((c) => c.text)
-            .join(" ");
-    }
-    const changes = [];
-    for (const entry of structuredEntries.slice(0, 24)) {
-        if (!changes.some((existing) => existing.type === entry.type && existing.description === entry.description)) {
-            changes.push(entry);
+        const docs = await retrieveDocs([changelogUrl], query);
+        const bestDocument = chooseBestDiffDocument(docs, input.stack, input.fromVersion, input.toVersion);
+        let structuredEntries = [];
+        if (bestDocument) {
+            bestSourceUrl = bestDocument.url;
+            structuredEntries = extractStructuredDiffEntries(bestDocument.html);
+            try {
+                const focusedSection = extractVersionSection(bestDocument.html, input.fromVersion, input.toVersion);
+                if (focusedSection.length > sectionText.length || /(upgrade|migration|breaking|deprecated|removed)/i.test(focusedSection)) {
+                    sectionText = focusedSection;
+                }
+            }
+            catch {
+                // ignore
+            }
         }
-    }
-    if (changes.length === 0 && sectionText) {
-        const sentences = sectionText
-            .split(/(?<=[.!?])\s+|\n+/)
-            .map(normalizeText)
-            .filter((s) => s.length > 20);
-        for (const sentence of sentences.slice(0, 40)) {
-            const type = classifyChunk(sentence);
-            if (type) {
-                if (!changes.some((c) => c.description === sentence)) {
+        const changes = [];
+        for (const entry of structuredEntries.slice(0, 24)) {
+            if (!changes.some((existing) => existing.type === entry.type && existing.description === entry.description)) {
+                changes.push(entry);
+            }
+        }
+        if (changes.length === 0 && sectionText) {
+            const sentences = sectionText
+                .split(/(?<=[.!?])\s+|\n+/)
+                .map(normalizeText)
+                .filter((sentence) => sentence.length > 20);
+            for (const sentence of sentences.slice(0, 40)) {
+                const type = classifyChunk(sentence);
+                if (type && !changes.some((existing) => existing.description === sentence)) {
                     changes.push({ type, description: sentence });
                 }
             }
         }
-    }
-    // If we found nothing meaningful, add a generic entry with the raw summary.
-    if (changes.length === 0 && sectionText.length > 0) {
-        changes.push({
-            type: "breaking",
-            description: `See official migration guide: ${bestSourceUrl}`
+        if (changes.length === 0 && sectionText.length > 0) {
+            changes.push({
+                type: "breaking",
+                description: `See official migration guide: ${bestSourceUrl}`
+            });
+        }
+        return formatDiffDocsEnvelope({
+            stack: input.stack,
+            fromVersion: input.fromVersion,
+            toVersion: input.toVersion,
+            changes,
+            sources: unique([bestSourceUrl, changelogUrl]),
+            cacheStatus: "miss"
         });
-    }
-    return {
-        stack,
-        fromVersion,
-        toVersion,
-        changes,
-        sources: unique([bestSourceUrl, changelogUrl])
-    };
+    });
+    semanticCache.setCache(key, result);
+    return result;
 }

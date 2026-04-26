@@ -2,29 +2,19 @@ import { semanticCache } from "./cache.js";
 import { detectStack } from "./detector.js";
 import { discoverFrameworkDocs } from "./discovery.js";
 import { extractRelevantCodeBlocks } from "./extractor.js";
+import { formatSearchDocsEnvelope } from "./formatter.js";
 import { rankChunks } from "./ranker.js";
 import { retrieveDocs } from "./retriever.js";
 import { withRetry } from "./retry.js";
-import type { DocsMode, DocsResponse, LockfileContext, PackageJson, RankedChunk, RetrievedDocument } from "./types.js";
-import { cacheKey, normalizeText, unique } from "./utils.js";
+import type { DocsMode, LockfileContext, PackageJson, RankedChunk, RetrievedDocument, SearchDocsResponse } from "./types.js";
+import { cacheKey, unique } from "./utils.js";
 import { resolveVersion } from "./version.js";
 
-const modeConfig: Record<DocsMode, { maxChunks: number; maxCodeBlocks: number; maxSources: number }> = {
-  quick: { maxChunks: 1, maxCodeBlocks: 1, maxSources: 1 },
-  full: { maxChunks: 3, maxCodeBlocks: 1, maxSources: 3 },
-  deep: { maxChunks: 6, maxCodeBlocks: 3, maxSources: 5 }
+const modeConfig: Record<DocsMode, { maxCodeBlocks: number; maxSources: number }> = {
+  quick: { maxCodeBlocks: 1, maxSources: 1 },
+  full: { maxCodeBlocks: 1, maxSources: 3 },
+  deep: { maxCodeBlocks: 3, maxSources: 5 }
 };
-
-function summarizeChunks(chunks: RankedChunk[], stack: string, version: string, mode: DocsMode): string {
-  const { maxChunks } = modeConfig[mode];
-  const selected = unique(chunks.slice(0, maxChunks + 1).map((chunk) => normalizeText(chunk.text))).slice(0, maxChunks);
-
-  if (selected.length === 0) {
-    throw new Error(`No useful documentation content found for ${stack}`);
-  }
-
-  return [`${stack} ${version}:`, ...selected].join(" ");
-}
 
 function queryTerms(query: string): string[] {
   return [...new Set((query.toLowerCase().match(/[a-z0-9_]+/g) ?? []).filter((word) => word.length >= 3))];
@@ -74,7 +64,7 @@ function chooseBestCodes(documents: RetrievedDocument[], rankedChunks: RankedChu
   return candidates
     .sort((a, b) => b.score - a.score || a.code.localeCompare(b.code))
     .slice(0, maxBlocks)
-    .map((c) => c.code);
+    .map((candidate) => candidate.code);
 }
 
 function computeConfidence(chunks: RankedChunk[], query: string): number {
@@ -105,17 +95,20 @@ export async function search_docs(input: {
   mode?: DocsMode;
   packageJson?: PackageJson;
   lockfiles?: LockfileContext;
-}): Promise<DocsResponse> {
+}): Promise<SearchDocsResponse> {
   const mode: DocsMode = input.mode ?? "full";
   const { maxCodeBlocks, maxSources } = modeConfig[mode];
   const candidates = detectStack(input.query, input.packageJson ?? input.lockfiles?.packageJson);
   const chosenStack = candidates[0] ?? "unknown";
   const version = resolveVersion(chosenStack, input.query, input.packageJson, input.lockfiles);
   const key = cacheKey(chosenStack, version, `${mode}:${input.query}`);
-  const cached = semanticCache.getCache(key);
+  const cached = semanticCache.getCache(key) as SearchDocsResponse | null;
 
-  if (cached) {
-    return cached;
+  if (cached && cached.tool === "search_docs") {
+    return {
+      ...cached,
+      cacheStatus: "hit"
+    };
   }
 
   const result = await withRetry(async () => {
@@ -124,19 +117,18 @@ export async function search_docs(input: {
     const chunks = rankChunks(documents, input.query);
     const codes = chooseBestCodes(documents, chunks, input.query, maxCodeBlocks);
     const sources = unique([officialUrl, ...chunks.slice(0, maxSources).map((chunk) => chunk.url)]).slice(0, maxSources);
-    const response: DocsResponse = {
+
+    return formatSearchDocsEnvelope({
       stack: chosenStack,
       version,
-      answer: summarizeChunks(chunks, chosenStack, version, mode),
+      mode,
+      chunks,
       sources: sources.length > 0 ? sources : [officialUrl],
-      confidence: computeConfidence(chunks, input.query)
-    };
-
-    if (codes.length > 0) {
-      response.code = codes.join("\n\n---\n\n");
-    }
-
-    return response;
+      confidence: computeConfidence(chunks, input.query),
+      query: input.query,
+      cacheStatus: "miss",
+      ...(codes.length > 0 ? { code: codes.join("\n\n---\n\n") } : {})
+    });
   });
 
   semanticCache.setCache(key, result);

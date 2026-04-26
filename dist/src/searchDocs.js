@@ -2,24 +2,17 @@ import { semanticCache } from "./cache.js";
 import { detectStack } from "./detector.js";
 import { discoverFrameworkDocs } from "./discovery.js";
 import { extractRelevantCodeBlocks } from "./extractor.js";
+import { formatSearchDocsEnvelope } from "./formatter.js";
 import { rankChunks } from "./ranker.js";
 import { retrieveDocs } from "./retriever.js";
 import { withRetry } from "./retry.js";
-import { cacheKey, normalizeText, unique } from "./utils.js";
+import { cacheKey, unique } from "./utils.js";
 import { resolveVersion } from "./version.js";
 const modeConfig = {
-    quick: { maxChunks: 1, maxCodeBlocks: 1, maxSources: 1 },
-    full: { maxChunks: 3, maxCodeBlocks: 1, maxSources: 3 },
-    deep: { maxChunks: 6, maxCodeBlocks: 3, maxSources: 5 }
+    quick: { maxCodeBlocks: 1, maxSources: 1 },
+    full: { maxCodeBlocks: 1, maxSources: 3 },
+    deep: { maxCodeBlocks: 3, maxSources: 5 }
 };
-function summarizeChunks(chunks, stack, version, mode) {
-    const { maxChunks } = modeConfig[mode];
-    const selected = unique(chunks.slice(0, maxChunks + 1).map((chunk) => normalizeText(chunk.text))).slice(0, maxChunks);
-    if (selected.length === 0) {
-        throw new Error(`No useful documentation content found for ${stack}`);
-    }
-    return [`${stack} ${version}:`, ...selected].join(" ");
-}
 function queryTerms(query) {
     return [...new Set((query.toLowerCase().match(/[a-z0-9_]+/g) ?? []).filter((word) => word.length >= 3))];
 }
@@ -57,7 +50,7 @@ function chooseBestCodes(documents, rankedChunks, query, maxBlocks) {
     return candidates
         .sort((a, b) => b.score - a.score || a.code.localeCompare(b.code))
         .slice(0, maxBlocks)
-        .map((c) => c.code);
+        .map((candidate) => candidate.code);
 }
 function computeConfidence(chunks, query) {
     const top = chunks[0];
@@ -85,8 +78,11 @@ export async function search_docs(input) {
     const version = resolveVersion(chosenStack, input.query, input.packageJson, input.lockfiles);
     const key = cacheKey(chosenStack, version, `${mode}:${input.query}`);
     const cached = semanticCache.getCache(key);
-    if (cached) {
-        return cached;
+    if (cached && cached.tool === "search_docs") {
+        return {
+            ...cached,
+            cacheStatus: "hit"
+        };
     }
     const result = await withRetry(async () => {
         const officialUrl = await discoverFrameworkDocs(chosenStack, input.query);
@@ -94,17 +90,17 @@ export async function search_docs(input) {
         const chunks = rankChunks(documents, input.query);
         const codes = chooseBestCodes(documents, chunks, input.query, maxCodeBlocks);
         const sources = unique([officialUrl, ...chunks.slice(0, maxSources).map((chunk) => chunk.url)]).slice(0, maxSources);
-        const response = {
+        return formatSearchDocsEnvelope({
             stack: chosenStack,
             version,
-            answer: summarizeChunks(chunks, chosenStack, version, mode),
+            mode,
+            chunks,
             sources: sources.length > 0 ? sources : [officialUrl],
-            confidence: computeConfidence(chunks, input.query)
-        };
-        if (codes.length > 0) {
-            response.code = codes.join("\n\n---\n\n");
-        }
-        return response;
+            confidence: computeConfidence(chunks, input.query),
+            query: input.query,
+            cacheStatus: "miss",
+            ...(codes.length > 0 ? { code: codes.join("\n\n---\n\n") } : {})
+        });
     });
     semanticCache.setCache(key, result);
     return result;

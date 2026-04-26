@@ -1,10 +1,19 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
-import { search_docs } from "./searchDocs.js";
 import { diff_docs } from "./diffDocs.js";
+import { logger } from "./logger.js";
+import { metrics } from "./metrics.js";
 import { scan_deprecations } from "./scanDeprecations.js";
-import { docsResponseSchema, docsModeSchema, lockfileContextSchema, packageJsonSchema } from "./types.js";
+import { search_docs } from "./searchDocs.js";
+import {
+  diffResponseSchema,
+  docsModeSchema,
+  lockfileContextSchema,
+  packageJsonSchema,
+  scanResponseSchema,
+  searchDocsResponseSchema
+} from "./types.js";
 
 const searchDocsToolInputSchema = z.object({
   query: z.string().min(3),
@@ -25,6 +34,20 @@ const scanDeprecationsToolInputSchema = z.object({
   version: z.string().optional()
 });
 
+async function instrument<T>(tool: string, fn: () => Promise<T>): Promise<T> {
+  const startedAt = performance.now();
+  try {
+    const result = await fn();
+    metrics.increment(`tool.${tool}.success`);
+    metrics.observe(`tool.${tool}.latency_ms`, performance.now() - startedAt);
+    return result;
+  } catch (error) {
+    metrics.increment(`tool.${tool}.failure`);
+    metrics.observe(`tool.${tool}.latency_ms`, performance.now() - startedAt);
+    throw error;
+  }
+}
+
 export function createDocsIntelligenceMcpServer(): McpServer {
   const server = new McpServer(
     {
@@ -44,11 +67,9 @@ export function createDocsIntelligenceMcpServer(): McpServer {
       title: "Search Docs",
       description:
         "Retrieve version-aware, official documentation for a framework or library. " +
-        "Supports mode='quick' (signature + 1 example), 'full' (default, full API), " +
-        "'deep' (internals, edge cases, alternatives). " +
-        "Pass lockfiles (goMod, cargoToml, requirementsTxt, gemfileLock) for accurate version pinning.",
+        "Supports mode='quick', 'full', and 'deep', plus lockfile-aware version pinning.",
       inputSchema: searchDocsToolInputSchema,
-      outputSchema: docsResponseSchema,
+      outputSchema: searchDocsResponseSchema,
       annotations: {
         title: "Search Docs",
         readOnlyHint: true,
@@ -63,12 +84,14 @@ export function createDocsIntelligenceMcpServer(): McpServer {
           extra.sessionId
         );
 
-        const result = await search_docs({
-          query,
-          ...(mode !== undefined && { mode }),
-          ...(packageJson !== undefined && { packageJson }),
-          ...(lockfiles !== undefined && { lockfiles: lockfiles as import("./types.js").LockfileContext })
-        });
+        const result = await instrument("search_docs", () =>
+          search_docs({
+            query,
+            ...(mode !== undefined && { mode }),
+            ...(packageJson !== undefined && { packageJson }),
+            ...(lockfiles !== undefined && { lockfiles: lockfiles as import("./types.js").LockfileContext })
+          })
+        );
 
         return {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
@@ -76,6 +99,7 @@ export function createDocsIntelligenceMcpServer(): McpServer {
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error";
+        logger.error("search_docs failed", { message });
         await server.sendLoggingMessage({ level: "error", data: `search_docs failed: ${message}` }, extra.sessionId);
         return {
           content: [{ type: "text", text: `search_docs failed: ${message}` }],
@@ -90,10 +114,9 @@ export function createDocsIntelligenceMcpServer(): McpServer {
     {
       title: "Diff Docs",
       description:
-        "Compare two versions of a framework or library and return a structured list of new features, " +
-        "deprecated APIs, removed APIs, and breaking changes. " +
-        "Example: diff_docs({ stack: 'react', fromVersion: '18', toVersion: '19' })",
+        "Compare two versions of a framework or library and return structured new, deprecated, removed, and breaking changes.",
       inputSchema: diffDocsToolInputSchema,
+      outputSchema: diffResponseSchema,
       annotations: {
         title: "Diff Docs",
         readOnlyHint: true,
@@ -108,13 +131,15 @@ export function createDocsIntelligenceMcpServer(): McpServer {
           extra.sessionId
         );
 
-        const result = await diff_docs({ stack, fromVersion, toVersion });
+        const result = await instrument("diff_docs", () => diff_docs({ stack, fromVersion, toVersion }));
 
         return {
-          content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          structuredContent: result
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error";
+        logger.error("diff_docs failed", { message });
         await server.sendLoggingMessage({ level: "error", data: `diff_docs failed: ${message}` }, extra.sessionId);
         return {
           content: [{ type: "text", text: `diff_docs failed: ${message}` }],
@@ -129,10 +154,9 @@ export function createDocsIntelligenceMcpServer(): McpServer {
     {
       title: "Scan Deprecations",
       description:
-        "Scan a file's source code for deprecated or removed APIs based on the stack's official changelog. " +
-        "Returns line numbers, deprecated API names, reasons, and suggested replacements. " +
-        "Example: scan_deprecations({ fileContent: '...', stack: 'react', version: '19' })",
+        "Scan a file's source code for deprecated or removed APIs based on official migration and deprecation docs.",
       inputSchema: scanDeprecationsToolInputSchema,
+      outputSchema: scanResponseSchema,
       annotations: {
         title: "Scan Deprecations",
         readOnlyHint: true,
@@ -146,21 +170,22 @@ export function createDocsIntelligenceMcpServer(): McpServer {
           extra.sessionId
         );
 
-        const result = await scan_deprecations({
-          fileContent,
-          stack,
-          ...(version !== undefined && { version })
-        });
+        const result = await instrument("scan_deprecations", () =>
+          scan_deprecations({
+            fileContent,
+            stack,
+            ...(version !== undefined && { version })
+          })
+        );
 
         return {
-          content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          structuredContent: result
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error";
-        await server.sendLoggingMessage(
-          { level: "error", data: `scan_deprecations failed: ${message}` },
-          extra.sessionId
-        );
+        logger.error("scan_deprecations failed", { message });
+        await server.sendLoggingMessage({ level: "error", data: `scan_deprecations failed: ${message}` }, extra.sessionId);
         return {
           content: [{ type: "text", text: `scan_deprecations failed: ${message}` }],
           isError: true

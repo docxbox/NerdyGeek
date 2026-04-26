@@ -15,6 +15,11 @@ It uses a hybrid docs-intelligence approach:
 
 That tradeoff keeps the tool practical for real coding sessions while still preferring official sources and deterministic output.
 
+The current line of development also adds a V4-style agent contract:
+- one shared response envelope across tools
+- persistent on-disk cache with reusable doc handles
+- rate limiting, metrics, and readiness endpoints for hosted use
+
 ## What NerdyGeek Does
 
 NerdyGeek currently exposes three MCP tools:
@@ -28,6 +33,26 @@ These tools help agents:
 - compare version changes and migration notes
 - scan source code for deprecated or removed APIs
 
+Every tool now returns the same high-level agent-facing shape:
+
+```ts
+type NerdyGeekEnvelope = {
+  tool: "search_docs" | "diff_docs" | "scan_deprecations";
+  stack: string;
+  version: string;
+  mode: "quick" | "full" | "deep";
+  summary: string;
+  actions: string[];
+  gotchas: string[];
+  code?: string;
+  sources: string[];
+  confidence: number;
+  docHandle: string;
+  cacheStatus: "hit" | "miss";
+  retrievedAt: string;
+};
+```
+
 ## Why NerdyGeek
 
 - Version-aware docs lookup
@@ -35,6 +60,8 @@ These tools help agents:
 - Hybrid discovery for better reliability
 - Deterministic ranking and validation
 - Structured outputs for agents
+- Persistent cache and reusable doc handles
+- Basic operational endpoints for hosting
 - Local use with Claude Code and Codex
 - Optional public HTTP MCP deployment
 
@@ -62,13 +89,9 @@ Input example:
 Output shape:
 
 ```ts
-type DocsResponse = {
-  stack: string;
-  version: string;
+type SearchDocsResponse = NerdyGeekEnvelope & {
+  tool: "search_docs";
   answer: string;
-  code?: string;
-  sources: string[];
-  confidence: number;
 };
 ```
 
@@ -104,6 +127,15 @@ Example:
   "version": "19"
 }
 ```
+
+## V4-Oriented Features
+
+- Persistent cache stored under `.nerdygeek/store.json`
+- Reusable `docHandle` values across repeated lookups
+- Shared summary/actions/gotchas envelope for all tools
+- HTTP rate limiting for hosted mode
+- `/health`, `/ready`, and `/metrics` endpoints
+- structured logging and in-process metrics collection
 
 ## Install
 
@@ -195,6 +227,14 @@ Local HTTP endpoint:
 http://127.0.0.1:3000/mcp
 ```
 
+Operational endpoints:
+
+```text
+http://127.0.0.1:3000/health
+http://127.0.0.1:3000/ready
+http://127.0.0.1:3000/metrics
+```
+
 ## How It Works
 
 NerdyGeek follows a hybrid docs-intelligence pipeline:
@@ -206,7 +246,9 @@ NerdyGeek follows a hybrid docs-intelligence pipeline:
 5. Retrieve relevant pages
 6. Extract clean text and code
 7. Rank chunks deterministically
-8. Validate the final result before returning it
+8. Format into a shared agent envelope
+9. Persist result by cache key and doc handle
+10. Validate the final result before returning it
 
 Core implementation:
 
@@ -214,6 +256,10 @@ Core implementation:
 - [`src/diffDocs.ts`](./src/diffDocs.ts)
 - [`src/scanDeprecations.ts`](./src/scanDeprecations.ts)
 - [`src/discovery.ts`](./src/discovery.ts)
+- [`src/formatter.ts`](./src/formatter.ts)
+- [`src/store.ts`](./src/store.ts)
+- [`src/metrics.ts`](./src/metrics.ts)
+- [`src/rateLimit.ts`](./src/rateLimit.ts)
 - [`src/retriever.ts`](./src/retriever.ts)
 - [`src/extractor.ts`](./src/extractor.ts)
 - [`src/ranker.ts`](./src/ranker.ts)

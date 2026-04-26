@@ -4,6 +4,7 @@ import { detectStack } from "../src/detector.js";
 import { directProbeUrlsForTesting, discoverChangelogUrl, discoverDeprecationUrl, searchQueriesForTesting } from "../src/discovery.js";
 import { chooseBestDiffDocument, classifyChunk, extractStructuredDiffEntries } from "../src/diffDocs.js";
 import { extract, extractRelevantCodeBlocks } from "../src/extractor.js";
+import { formatDiffDocsEnvelope, formatScanEnvelope, formatSearchDocsEnvelope } from "../src/formatter.js";
 import { rankChunks } from "../src/ranker.js";
 import { extractApiCalls, matchDeprecation } from "../src/scanDeprecations.js";
 import { isLikelyOfficialSourceUrl } from "../src/utils.js";
@@ -42,11 +43,19 @@ async function main() {
     assert.equal(key, cacheKey("react", "18", "react hooks docs"));
     const cache = new SemanticCache();
     cache.setCache(key, {
+        tool: "search_docs",
         stack: "react",
         version: "18",
+        mode: "full",
+        summary: "React 18 docs explain hooks and rendering behavior clearly.",
         answer: "React 18 docs explain hooks and rendering behavior clearly.",
+        actions: ["Use the React reference as the implementation guide."],
+        gotchas: ["Hooks must only be called at the top level of React components."],
         sources: ["https://react.dev/reference/react"],
-        confidence: 0.85
+        confidence: 0.85,
+        docHandle: "search-docs-react-18-abc12345",
+        cacheStatus: "miss",
+        retrievedAt: "2026-04-26T00:00:00.000Z"
     }, 10);
     assert.ok(cache.getCache(key));
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -113,19 +122,69 @@ export async function create() {
     </main></body></html>
   `);
     assert.equal(codeBlocks.length >= 2, true);
-    assert.throws(() => validate({
+    const searchEnvelope = formatSearchDocsEnvelope({
         stack: "react",
         version: "18",
-        answer: "<div>bad html</div>",
+        mode: "full",
+        chunks: ranked,
         sources: ["https://react.dev/reference/react"],
-        confidence: 0.85
+        confidence: 0.85,
+        query: "react hooks"
+    });
+    assert.equal(searchEnvelope.tool, "search_docs");
+    assert.ok(searchEnvelope.docHandle.length > 8);
+    assert.ok(searchEnvelope.summary.includes("Hooks"));
+    const diffEnvelope = formatDiffDocsEnvelope({
+        stack: "react",
+        fromVersion: "18",
+        toVersion: "19",
+        changes: [
+            { type: "breaking", description: "Errors are no longer re-thrown after they are caught." },
+            { type: "deprecated", description: "react-test-renderer is deprecated.", replacement: "@testing-library/react" }
+        ],
+        sources: ["https://react.dev/blog/2024/04/25/react-19-upgrade-guide"]
+    });
+    assert.equal(diffEnvelope.tool, "diff_docs");
+    assert.ok(diffEnvelope.summary.includes("18 -> 19"));
+    assert.ok(diffEnvelope.actions.length >= 1);
+    const scanEnvelope = formatScanEnvelope({
+        stack: "react",
+        version: "19",
+        deprecated: [{ line: 10, api: "react-test-renderer", reason: "react-test-renderer is deprecated.", replacement: "@testing-library/react" }],
+        removed: [],
+        sources: ["https://react.dev/blog/2024/04/25/react-19-upgrade-guide"]
+    });
+    assert.equal(scanEnvelope.tool, "scan_deprecations");
+    assert.ok(scanEnvelope.summary.includes("deprecated"));
+    assert.throws(() => validate({
+        tool: "search_docs",
+        stack: "react",
+        version: "18",
+        mode: "full",
+        summary: "<div>bad html</div>",
+        answer: "<div>bad html</div>",
+        actions: ["Use the React docs."],
+        gotchas: [],
+        sources: ["https://react.dev/reference/react"],
+        confidence: 0.85,
+        docHandle: "bad-handle",
+        cacheStatus: "miss",
+        retrievedAt: "2026-04-26T00:00:00.000Z"
     }));
     assert.doesNotThrow(() => validate({
+        tool: "search_docs",
         stack: "go",
         version: "1",
+        mode: "full",
+        summary: "go 1: ServeMux routing enhancements are documented on the official Go website.",
         answer: "go 1: ServeMux routing enhancements are documented on the official Go website.",
+        actions: ["Use ServeMux method patterns for routing."],
+        gotchas: [],
         sources: ["https://go.dev/blog/routing-enhancements"],
-        confidence: 0.82
+        confidence: 0.82,
+        docHandle: "go-servemux-12345678",
+        cacheStatus: "miss",
+        retrievedAt: "2026-04-26T00:00:00.000Z"
     }));
     // --- detector: expanded stacks ---
     assert.equal(detectStack("net/http ServeMux routing")[0], "go");

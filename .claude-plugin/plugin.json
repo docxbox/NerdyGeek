@@ -1,7 +1,7 @@
 {
   "name": "nerdygeek",
   "description": "Version-aware documentation intelligence for coding agents through an MCP server and auto-use skill.",
-  "version": "1.0.5",
+  "version": "2.0.0",
   "author": {
     "name": "NerdyGeek"
   },
