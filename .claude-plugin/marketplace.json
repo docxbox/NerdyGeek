@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "NerdyGeek Claude Code plugin marketplace",
-    "version": "1.0.4"
+    "version": "1.0.5"
   },
   "plugins": [
     {
       "name": "nerdygeek",
       "source": "./",
       "description": "Use official, version-aware docs from an MCP tool when Claude gets stuck coding.",
-      "version": "1.0.4",
+      "version": "1.0.5",
       "author": {
         "name": "NerdyGeek"
       },
