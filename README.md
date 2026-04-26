@@ -7,6 +7,7 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/docxbox/NerdyGeek?style=social)](https://github.com/docxbox/NerdyGeek/stargazers)
 
+
 NerdyGeek is a TypeScript Node.js MCP server and Claude Code plugin for coding agents that need current documentation while they work.
 
 It uses a hybrid docs-intelligence approach:
@@ -52,6 +53,12 @@ type NerdyGeekEnvelope = {
   retrievedAt: string;
 };
 ```
+<img width="1072" height="768" alt="image" src="https://github.com/user-attachments/assets/78268d4b-4ecb-4075-a718-8db1821dfe45" />
+
+
+<img width="1085" height="868" alt="image" src="https://github.com/user-attachments/assets/a57a0ee4-a805-49c2-b916-992827487236" />
+
+
 
 ## Why NerdyGeek
 
