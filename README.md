@@ -1,4 +1,5 @@
 # NerdyGeek
+<img width="760" height="768" alt="WhatsApp Image 2026-04-28 at 11 23 17 AM" src="https://github.com/user-attachments/assets/0ece259c-f69b-4084-af85-f850b6e2c219" />
 
 > Live docs for coding agents. Fresh references, version-aware answers, less guessing.
 
