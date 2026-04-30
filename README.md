@@ -1,28 +1,41 @@
 # NerdyGeek
-<img width="400" height="400" alt="WhatsApp Image 2026-04-28 at 11 23 17 AM" src="https://github.com/user-attachments/assets/0ece259c-f69b-4084-af85-f850b6e2c219" />
+<img width="400" height="400" alt="NerdyGeek" src="https://github.com/user-attachments/assets/0ece259c-f69b-4084-af85-f850b6e2c219" />
 
-> Live docs for coding agents. Fresh references, version-aware answers, less guessing.
+> A docs-intelligence layer for coding agents.
 
-[![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-Plugin-blue)](https://github.com/docxbox/NerdyGeek)
+[![Claude Code Marketplace](https://img.shields.io/badge/Claude%20Code-Published-blue)](https://github.com/docxbox/NerdyGeek)
 [![MCP Server](https://img.shields.io/badge/MCP-Server-black)](https://modelcontextprotocol.io/)
 [![MIT License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/docxbox/NerdyGeek?style=social)](https://github.com/docxbox/NerdyGeek/stargazers)
 
+NerdyGeek is an open-source TypeScript Node.js MCP server and Claude Code plugin that helps coding agents stop guessing from stale memory.
 
-NerdyGeek is a TypeScript Node.js MCP server and Claude Code plugin for coding agents that need current documentation while they work.
+When an agent gets stuck, NerdyGeek helps it:
+- fetch current official documentation
+- resolve version context from project files
+- compare framework upgrades
+- scan for deprecated or removed APIs
+- return compressed, source-backed answers instead of dumping long docs into context
 
-It uses a hybrid docs-intelligence approach:
-- dynamic discovery and ranking when that is reliable
-- curated authoritative fallbacks where the ecosystem is noisy or ambiguous
+NerdyGeek is now successfully published in the Claude Code marketplace and also works with Codex and local MCP-based workflows.
 
-That tradeoff keeps the tool practical for real coding sessions while still preferring official sources and deterministic output.
+## Why NerdyGeek Exists
 
-The current line of development also adds a V4-style agent contract:
-- one shared response envelope across tools
-- persistent on-disk cache with reusable doc handles
-- rate limiting, metrics, and readiness endpoints for hosted use
+Coding agents move fast, but documentation drift is real.
 
-## What NerdyGeek Does
+The moment version details matter, or a framework changes behavior, agents often:
+- guess from memory
+- pull noisy search results
+- use the wrong version of the docs
+- miss migration and deprecation details
+
+NerdyGeek exists to make agents behave more like careful engineers:
+- source-backed
+- version-aware
+- token-conscious
+- conservative when uncertain
+
+## Core Capabilities
 
 NerdyGeek currently exposes three MCP tools:
 
@@ -30,12 +43,37 @@ NerdyGeek currently exposes three MCP tools:
 - `diff_docs`
 - `scan_deprecations`
 
-These tools help agents:
-- fetch current official docs for a query
-- compare version changes and migration notes
-- scan source code for deprecated or removed APIs
+### `search_docs`
 
-Every tool now returns the same high-level agent-facing shape:
+Version-aware official documentation lookup for frameworks, libraries, and APIs.
+
+Use it when an agent needs:
+- the latest official docs for a feature
+- docs pinned to the version in the repo
+- examples, gotchas, and source links
+
+### `diff_docs`
+
+Structured upgrade and migration comparison between versions.
+
+Use it when an agent needs:
+- breaking changes
+- removed APIs
+- deprecated APIs
+- migration guidance before an upgrade
+
+### `scan_deprecations`
+
+Source-code scan against official migration or deprecation docs.
+
+Use it when an agent needs:
+- outdated API detection
+- upgrade prep before a version bump
+- line-level findings for deprecated or removed usage
+
+## Shared Response Contract
+
+All tools now return a shared agent-facing envelope:
 
 ```ts
 type NerdyGeekEnvelope = {
@@ -54,98 +92,58 @@ type NerdyGeekEnvelope = {
   retrievedAt: string;
 };
 ```
-<img width="1072" height="768" alt="image" src="https://github.com/user-attachments/assets/78268d4b-4ecb-4075-a718-8db1821dfe45" />
 
+<img width="1072" height="768" alt="NerdyGeek output example 1" src="https://github.com/user-attachments/assets/78268d4b-4ecb-4075-a718-8db1821dfe45" />
 
-<img width="1085" height="868" alt="image" src="https://github.com/user-attachments/assets/a57a0ee4-a805-49c2-b916-992827487236" />
+<img width="1085" height="868" alt="NerdyGeek output example 2" src="https://github.com/user-attachments/assets/a57a0ee4-a805-49c2-b916-992827487236" />
 
+This lets agents consume NerdyGeek results in a predictable, low-noise, token-efficient format.
 
+## What Makes NerdyGeek Different
 
-## Why NerdyGeek
+NerdyGeek uses a hybrid docs-intelligence approach:
+- dynamic discovery and ranking when that is reliable
+- curated authoritative fallbacks when ecosystems are noisy or ambiguous
 
-- Version-aware docs lookup
-- Official-source prioritization
-- Hybrid discovery for better reliability
-- Deterministic ranking and validation
-- Structured outputs for agents
-- Persistent cache and reusable doc handles
-- Basic operational endpoints for hosting
-- Local use with Claude Code and Codex
-- Optional public HTTP MCP deployment
-
-## Tools
-
-### `search_docs`
-
-Fetch version-aware official documentation for a query.
-
-Input example:
-
-```json
-{
-  "query": "next 14 server actions cookies",
-  "mode": "full",
-  "packageJson": {
-    "dependencies": {
-      "next": "^14.2.1",
-      "react": "^18.2.0"
-    }
-  }
-}
-```
-
-Output shape:
-
-```ts
-type SearchDocsResponse = NerdyGeekEnvelope & {
-  tool: "search_docs";
-  answer: string;
-};
-```
-
-### `diff_docs`
-
-Compare two versions of a stack and summarize:
-
-- new features
-- deprecated APIs
-- removed APIs
-- breaking changes
-
-Example:
-
-```json
-{
-  "stack": "react",
-  "fromVersion": "18",
-  "toVersion": "19"
-}
-```
-
-### `scan_deprecations`
-
-Scan source code against official deprecation or migration docs and return matches with line numbers.
-
-Example:
-
-```json
-{
-  "fileContent": "import { useEffect } from 'react';",
-  "stack": "react",
-  "version": "19"
-}
-```
+That tradeoff gives you:
+- stronger official-source guarantees
+- better reliability in real coding sessions
+- fewer off-topic or SEO-polluted results
+- less philosophical purity than a zero-registry design, but much better practical outcomes
 
 ## V4-Oriented Features
 
-- Persistent cache stored under `.nerdygeek/store.json`
-- Reusable `docHandle` values across repeated lookups
-- Shared summary/actions/gotchas envelope for all tools
+NerdyGeek now includes a more infrastructure-style layer on top of its MCP tools:
+
+- shared response envelope across tools
+- persistent on-disk cache in `.nerdygeek/store.json`
+- reusable `docHandle` values for repeated lookups
+- cache hit/miss tracking
 - HTTP rate limiting for hosted mode
 - `/health`, `/ready`, and `/metrics` endpoints
-- structured logging and in-process metrics collection
+- structured logging
+
+It is not the final word in production hardening yet, but it is well beyond a simple prototype plugin.
 
 ## Install
+
+### Claude Code Marketplace
+
+NerdyGeek is published for Claude Code.
+
+```bash
+claude plugin marketplace add docxbox/NerdyGeek
+claude plugin install nerdygeek@nerdygeek
+```
+
+To update later:
+
+```bash
+claude plugin marketplace update nerdygeek
+claude plugin update nerdygeek@nerdygeek
+```
+
+### Local Install
 
 Clone the repo and build once:
 
@@ -165,15 +163,6 @@ Then install NerdyGeek for your coding agent:
 ## Agent Setup
 
 ### Claude Code
-
-This repo is packaged as a Claude Code plugin marketplace repo and also includes a project MCP config.
-
-Marketplace install:
-
-```bash
-claude plugin marketplace add docxbox/NerdyGeek
-claude plugin install nerdygeek@nerdygeek
-```
 
 Relevant files:
 
@@ -248,15 +237,15 @@ http://127.0.0.1:3000/metrics
 NerdyGeek follows a hybrid docs-intelligence pipeline:
 
 1. Detect the likely stack from the query and optional project metadata
-2. Resolve version context from the query, `package.json`, or supported lockfiles
+2. Resolve version context from the query, `package.json`, and supported lockfiles
 3. Discover official docs dynamically when possible
 4. Fall back to curated authoritative URLs when discovery is unreliable
 5. Retrieve relevant pages
 6. Extract clean text and code
 7. Rank chunks deterministically
-8. Format into a shared agent envelope
-9. Persist result by cache key and doc handle
-10. Validate the final result before returning it
+8. Format results into a shared agent envelope
+9. Persist by cache key and `docHandle`
+10. Validate before returning
 
 Core implementation:
 
@@ -287,17 +276,16 @@ Core implementation:
 - `npm run install:all`
 - `npm test`
 
-## Notes On Discovery
+## Current Direction
 
-NerdyGeek intentionally uses a hybrid strategy now.
+The long-term vision is to make NerdyGeek feel less like a docs tool and more like a **NerdyGeek engineer**:
+- knows when to stop guessing
+- fetches the right docs before risky edits
+- preserves tokens through compression and cache reuse
+- stays aligned with the actual version in the repo
+- helps agents keep shipping without hallucinating
 
-Pure auto-discovery sounds cleaner, but in practice some ecosystems are too noisy for reliable agent workflows. The current design prefers dynamic discovery first, then uses curated authoritative fallbacks for docs roots, changelogs, and deprecation guides where needed.
-
-That means:
-- better real-world reliability
-- fewer off-topic results
-- stronger official-source guarantees
-- less philosophical purity than a zero-registry design
+That is the standard this project is moving toward.
 
 ## Star History
 
